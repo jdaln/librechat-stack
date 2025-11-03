@@ -2,7 +2,7 @@
 
 This guide provides instructions for setting up and running the LibreChat stack locally, with a focus on a more secure deployment on Apple Silicon. At the moment and in this default configuration, this stack uses Google VertexAI subscription in its configuration due to their generous USD 300 credit.
 
-This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) and [NOTICE](NOTICE) files for details.
+This project is licensed under the Apache 2.0 License. See the [LICENSE](LICENSE) files for details.
 
 ## 1. Prerequisites
 
