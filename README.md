@@ -155,6 +155,7 @@ The foundation of this Docker Compose stack was adapted from the work of [nicede
 
 - Fix CORS for artifacts
 - Egress squid proxy to prevent successful LLM Prompt hijacking efficiently by whitelisting needed egress domains
-
+- Consider adding https://github.com/martvaha/code-interpreter, https://github.com/Fritsl/LibreChatLocalWebSearchStack and https://github.com/Fritsl/LibreChatConfigurator
+- Renovate and CI
 
 [1]: https://github.com/abiosoft/colima "GitHub - abiosoft/colima: Container runtimes on macOS (and Linux) with minimal setup"
