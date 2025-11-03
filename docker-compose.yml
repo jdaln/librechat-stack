@@ -1,0 +1,233 @@
+# docker-compose.yml
+#
+# Goal:
+# - Keep "api" + "sandpack" reachable from your Mac (127.0.0.1 only), with INTERNET egress.
+# - Keep data services (mongodb, meilisearch, vectordb, rag_api) on an INTERNAL network (no egress).
+# - Avoid host bind-mounts (use named volumes).
+# - Load secrets/config from .env (no mounting .env).
+#
+# Usage (Colima aiarm profile example):
+#   docker context use colima-aiarm
+#   docker compose -f docker-compose.yml -f compose.hardening.yml up -d
+#   # Discover chosen host ports (dynamic publishing):
+#   docker compose port api ${PORT:-3080}
+#   docker compose port sandpack 80
+
+name: librechat-stack
+
+networks:
+  # Internal (no egress): used by DBs and internal services
+  lan:
+    internal: true
+  # WAN/default egress: attach ONLY services that need internet
+  wan: {}
+
+secrets:
+  gcp_sa:
+    file: ./secrets/gcp-sa.json
+  librechat_yaml:
+    file: ./librechat.yaml
+
+volumes:
+  # App volumes
+  lbc_api_images: {}
+  lbc_api_uploads: {}
+  lbc_app_logs: {}
+  lbc_app_api_logs: {}
+  lbc_app_data: {}
+  # Datastores
+  mongo_data: {}
+  meili_data: {}
+  pgdata2: {}
+
+services:
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Application API (needs internet + local access from macOS)
+  # ──────────────────────────────────────────────────────────────────────────────
+  api:
+    image: ghcr.io/danny-avila/librechat:v0.8.1-rc1
+    container_name: LibreChat
+    depends_on:
+      mongodb:
+        condition: service_healthy
+      rag_api:
+        condition: service_healthy
+      # caddy:
+      #   condition: service_started
+      mongo-init:
+        condition: service_completed_successfully
+    env_file:
+      - .env
+    environment:
+      HOST: 0.0.0.0
+      # MONGO_URI: mongodb://mongodb:27017/LibreChat
+      MEILI_HOST: http://meilisearch:7700
+      RAG_PORT: ${RAG_PORT:-8000}
+      RAG_API_URL: http://rag_api:${RAG_PORT:-8000}
+      # IMPORTANT: talk to the bundler by SERVICE NAME on the internal network
+      # (Do NOT use host.docker.internal)
+      SANDPACK_BUNDLER_URL: http://127.0.0.1:80
+      # To use the optional static preview server, uncomment the following line
+      # and run the stack with the optional/static-preview/compose.yml file.
+      # SANDPACK_STATIC_BUNDLER_URL: https://preview.127.0.0.1.sslip.io
+      CONFIG_PATH: /run/secrets/librechat_yaml
+      MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongodb:27017/LibreChat?authSource=LibreChat
+    # No host binds — use named volumes only
+    volumes:
+      - lbc_api_images:/app/client/public/images:ro
+      - lbc_api_uploads:/app/uploads
+      - lbc_app_data:/app/data
+    networks:
+      - lan    # internal comms (DBs, rag_api)
+      - wan    # allow egress to the internet
+    ports:
+      - "127.0.0.1:3080:3080"
+    secrets:
+      - librechat_yaml
+      - gcp_sa
+    restart: always
+    # If you KNOW an image is amd64-only on Apple Silicon, uncomment:
+    # platform: linux/amd64
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Sandpack bundler (needs internet + local access from macOS)
+  # ──────────────────────────────────────────────────────────────────────────────
+  sandpack:
+    image: ghcr.io/librechat-ai/codesandbox-client/bundler:20251101
+    container_name: sandpack-bundler
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z 127.0.0.1 80 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - lan
+      - wan
+    ports:
+      - "127.0.0.1:80:80"
+    restart: always
+    # platform: linux/amd64  # uncomment only if needed on M1
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # MongoDB (internal only)
+  # ──────────────────────────────────────────────────────────────────────────────
+  mongodb:
+    image: mongo:8.2-noble
+    container_name: chat-mongodb
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_DATABASE: LibreChat   # creates the DB at init time
+    command: ["mongod", "--auth", "--bind_ip_all"]
+    volumes:
+      - mongo_data:/data/db
+    networks: [lan]
+    restart: always
+    healthcheck:
+      # Try unauthenticated ping (works during first-boot init),
+      # else try authenticated ping once auth is active.
+      test:
+        [
+          "CMD-SHELL",
+          "mongosh --quiet --eval \"db.adminCommand({ ping: 1 }).ok\" 127.0.0.1:27017/admin | grep -q 1 || mongosh --quiet \"mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@127.0.0.1:27017/admin?authSource=admin\" --eval \"db.adminCommand({ ping: 1 }).ok\" | grep -q 1"
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 40s
+
+  # One time side-car
+  mongo-init:
+    image: mongo:8.2-noble
+    container_name: mongo-init
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks: [lan]
+    restart: "no"
+    environment:
+      MONGO_ROOT_USER: ${MONGO_ROOT_USER}
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_APP_USER: ${MONGO_APP_USER}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    command:
+      - /bin/sh
+      - -lc
+      - >
+        mongosh "mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/admin?authSource=admin"
+        --eval "
+          const u = process.env.MONGO_APP_USER;
+          const p = process.env.MONGO_APP_PASSWORD;
+          const dbName = 'LibreChat';
+          const d = db.getSiblingDB(dbName);
+          if (!d.getUser(u)) {
+            d.createUser({ user: u, pwd: p, roles: [ { role: 'readWrite', db: dbName } ] });
+            print('created user ' + u);
+          } else {
+            d.updateUser(u, { pwd: p });
+            print('user ' + u + ' already exists (password refreshed)');
+          }
+        "
+  
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Meilisearch (internal only)
+  # ──────────────────────────────────────────────────────────────────────────────
+  meilisearch:
+    image: getmeili/meilisearch:v1.12.3
+    container_name: chat-meilisearch
+    env_file:
+      - .env    # provides MEILI_MASTER_KEY
+    environment:
+      MEILI_HOST: http://meilisearch:7700
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili_data:/meili_data
+    networks: [lan]
+    restart: always
+    # platform: linux/amd64
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Postgres + pgvector (internal only)
+  # ──────────────────────────────────────────────────────────────────────────────
+  vectordb:
+    image: pgvector/pgvector:0.8.0-pg15-trixie
+    container_name: vectordb
+    env_file:
+      - .env
+    volumes:
+      - pgdata2:/var/lib/postgresql/data
+    networks: [lan]
+    restart: always
+    # platform: linux/amd64
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # RAG API (needs Internet access for querying the LLM)
+  # ──────────────────────────────────────────────────────────────────────────────
+  rag_api:
+    image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:65c64ed8bca3b1b7f259382570e98586e530c1be
+    container_name: rag_api
+    depends_on:
+      vectordb:
+        condition: service_started
+    env_file:
+      - .env
+    environment:
+      # DEBUG_RAG_API: "True"
+      RAG_HOST: 0.0.0.0
+      DB_HOST: vectordb
+      RAG_PORT: ${RAG_PORT:-8000}
+    networks: 
+      - lan
+      - wan
+    restart: always
+    # platform: linux/amd64
+    secrets:
+      - gcp_sa
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,sys,socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', int(os.getenv('RAG_PORT','8000')))); s.close()\""]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+      start_period: 20s
+    # to consider but in this case rag_api: and api: will need to run with the same user in harden

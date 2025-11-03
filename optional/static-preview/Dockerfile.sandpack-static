@@ -1,0 +1,31 @@
+# ---- build ----
+FROM node:20-alpine AS build
+RUN apk add --no-cache git
+WORKDIR /app
+
+# Get the server
+RUN git clone --depth=1 https://github.com/LibreChat-AI/static-browser-server.git .
+
+# Use pnpm (repo uses it in scripts)
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Install + build static assets (produces out/preview and out/lib)
+RUN pnpm install --no-frozen-lockfile
+RUN pnpm run build
+
+# ---- runtime ----
+FROM node:20-alpine
+WORKDIR /app
+ENV NODE_ENV=production
+ENV HOST=0.0.0.0
+ENV PORT=4324
+EXPOSE 4324
+
+# Bring the whole app (servers/*.ts), built assets, and node_modules
+COPY --from=build /app /app
+
+# Ensure pnpm is available in runtime
+RUN corepack enable && corepack prepare pnpm@latest --activate
+
+# Run the demo Fastify server from TypeScript (as the README instructs)
+CMD ["pnpm", "run", "start:demo"]

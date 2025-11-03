@@ -1,0 +1,119 @@
+# ------------------------------------------------------------------------------
+# LibreChat Environment Configuration
+#
+# Copy this file to .env and fill in the values.
+# For more details on configuration, see the official documentation:
+# https://www.librechat.ai/docs/configuration/dotenv
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+# General Application Settings
+# ------------------------------------------------------------------------------
+
+# The title displayed in the web interface.
+APP_TITLE=LibreChatViaGoogle
+
+# ------------------------------------------------------------------------------
+# Networking
+# ------------------------------------------------------------------------------
+
+# The port on which the RAG (Retrieval-Augmented Generation) API service will listen.
+# This should match the value in the docker-compose.yml file.
+RAG_PORT=8000
+BUNDLER_PORT=31234
+
+# ------------------------------------------------------------------------------
+# Security & Secrets
+#
+# IMPORTANT: Change all default "24389_CHANGE_ME" values to strong, unique secrets.
+# You can generate a secure random key with:
+#   openssl rand -hex 32
+# ------------------------------------------------------------------------------
+
+# Master key for Meilisearch, the search engine used by LibreChat.
+MEILI_MASTER_KEY=24389_CHANGE_ME
+
+# JSON Web Token secrets for user authentication.
+# These must be kept private. Generate two different, strong keys.
+JWT_SECRET=24389_CHANGE_ME
+JWT_REFRESH_SECRET=24389_CHANGE_ME
+
+# ------------------------------------------------------------------------------
+# MongoDB Database Credentials
+# ------------------------------------------------------------------------------
+
+# Credentials for the MongoDB root user. This user is only used once for
+# the initial setup to create the application database and user.
+MONGO_ROOT_USER=24389_CHANGE_ME
+MONGO_ROOT_PASSWORD=24389_CHANGE_ME
+
+# Credentials for the application user. LibreChat uses this user to
+# connect to and interact with the database.
+MONGO_APP_USER=24389_CHANGE_ME
+MONGO_APP_PASSWORD=24389_CHANGE_ME
+
+# ------------------------------------------------------------------------------
+# PostgreSQL (Vector Database) Credentials
+# ------------------------------------------------------------------------------
+
+# Credentials for the PostgreSQL database, which is used as a vector store
+# for the RAG API.
+POSTGRES_DB=24389_CHANGE_ME
+POSTGRES_USER=24389_CHANGE_ME
+POSTGRES_PASSWORD=24389_CHANGE_ME
+
+# ------------------------------------------------------------------------------
+# AI Provider Configuration (Google Vertex AI)
+# ------------------------------------------------------------------------------
+
+# Path to the Google Cloud service account key file within the container.
+# This is mounted as a Docker secret.
+GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_sa
+GOOGLE_SERVICE_KEY_FILE=/run/secrets/gcp_sa
+
+# Comma-separated list of available Google AI models to use in LibreChat.
+GOOGLE_MODELS=gemini-1.5-pro,gemini-1.5-flash,gemini-1.5-flash-tool-use
+# The Google Cloud region where the AI models will be accessed.
+GOOGLE_LOC=europe-north1
+
+# ------------------------------------------------------------------------------
+# RAG API Configuration
+# ------------------------------------------------------------------------------
+
+# The provider for generating text embeddings. Default is Google Vertex AI.
+EMBEDDINGS_PROVIDER=vertexai
+
+# The specific model to use for embeddings.
+EMBEDDINGS_MODEL=text-embedding-004 # default for google
+
+# Whether to extract images from PDF files during processing.
+PDF_EXTRACT_IMAGES=True
+
+# ------------------------------------------------------------------------------
+# Optional: Firecrawl Scraper
+# This service is not enabled by default, as Google's API can handle an equivalent
+# to web scraping via its search API.
+# ------------------------------------------------------------------------------
+
+# # Your API key for the Firecrawl service.
+# FIRECRAWL_API_KEY=your_firecrawl_api_key
+# # Optional: Custom Firecrawl API URL if you are self-hosting it.
+# FIRECRAWL_API_URL=your_firecrawl_api_url
+
+# ------------------------------------------------------------------------------
+# Advanced/Internal Settings
+# These are default values that should work for most local setups.
+# ------------------------------------------------------------------------------
+
+# The domain for the client and server. These are used for CORS and other
+# internal settings. For a local setup, the default is usually correct.
+DOMAIN_CLIENT=http://localhost:3080
+DOMAIN_SERVER=http://localhost:3080
+
+# Prevents search engines from indexing the site.
+NO_INDEX=true
+
+# Specifies the number of trusted reverse proxies in front of the application.
+# A value of 1 is the default and correct when running behind a single proxy like Caddy.
+# A value of 0 means the application is directly exposed to the internet.
+TRUST_PROXY=1
