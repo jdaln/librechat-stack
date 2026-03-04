@@ -16,6 +16,32 @@ x-harden: &harden
     - "/run:size=500m"
 
 services:
+  egress-proxy:
+    <<: *harden
+    mem_limit: "256m"
+    cpus: "0.5"
+    cap_add:
+      - SETGID
+      - SETUID
+    # Squid writes pid/cache/log files; keep them on tmpfs with a read-only rootfs.
+    tmpfs:
+      - "/tmp:size=256m"
+      - "/run:size=64m"
+      - "/var/spool/squid:rw,size=128m,uid=13,gid=13,mode=0775"
+      - "/var/log/squid:rw,size=64m,uid=13,gid=13,mode=0775"
+
+  api-proxy:
+    <<: *harden
+    mem_limit: "128m"
+    cpus: "0.5"
+    cap_add:
+      - NET_BIND_SERVICE
+    tmpfs:
+      - "/tmp:size=128m"
+      - "/run:size=32m"
+      - "/config:size=16m"
+      - "/data:size=16m"
+
   api:
     <<: *harden
     mem_limit: "2g"
@@ -54,7 +80,7 @@ services:
     <<: *harden
     mem_limit: "1.5g"
     cpus: "1.0"
-    user: "1000:1000"        # run as non-root meili user
+    # Keep default image user; forcing UID here can break first-run volume writes.
 
   vectordb:
     <<: *harden

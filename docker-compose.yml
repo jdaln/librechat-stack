@@ -1,8 +1,9 @@
 # docker-compose.yml
 #
 # Goal:
-# - Keep "api" + "sandpack" reachable from your Mac (127.0.0.1 only), with INTERNET egress.
-# - Keep data services (mongodb, meilisearch, vectordb, rag_api) on an INTERNAL network (no egress).
+# - Keep LibreChat UI/API + sandpack reachable from your Mac (127.0.0.1 only).
+# - Route API/RAG outbound traffic through a domain-allowlisted Squid egress proxy.
+# - Keep data services (mongodb, meilisearch, vectordb) on an INTERNAL network (no egress).
 # - Avoid host bind-mounts (use named volumes).
 # - Load secrets/config from .env (no mounting .env).
 #
@@ -27,6 +28,10 @@ secrets:
     file: ./secrets/gcp-sa.json
   librechat_yaml:
     file: ./librechat.yaml
+  squid_conf:
+    file: ./optional/egress-proxy/squid.conf
+  squid_allowlist:
+    file: ./optional/egress-proxy/allowed_domains.txt
 
 volumes:
   # App volumes
@@ -42,16 +47,51 @@ volumes:
 
 services:
   # ──────────────────────────────────────────────────────────────────────────────
-  # Application API (needs internet + local access from macOS)
+  # Egress proxy (the only service with outbound Internet for API/RAG)
+  # ──────────────────────────────────────────────────────────────────────────────
+  egress-proxy:
+    image: ubuntu/squid:latest
+    container_name: egress-proxy
+    networks:
+      - lan
+      - wan
+    secrets:
+      - source: squid_conf
+        target: /etc/squid/squid.conf
+      - source: squid_allowlist
+        target: /run/secrets/squid_allowlist
+    restart: always
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Local API ingress proxy (host access without granting API direct WAN)
+  # ──────────────────────────────────────────────────────────────────────────────
+  api-proxy:
+    image: caddy:2.8-alpine
+    container_name: api-proxy
+    depends_on:
+      api:
+        condition: service_started
+    command: ["caddy", "reverse-proxy", "--from", ":80", "--to", "api:3080"]
+    ports:
+      - "127.0.0.1:3081:80"
+    networks:
+      - lan
+      - wan
+    restart: always
+
+  # ──────────────────────────────────────────────────────────────────────────────
+  # Application API (egress only via egress-proxy + local access from macOS)
   # ──────────────────────────────────────────────────────────────────────────────
   api:
-    image: ghcr.io/danny-avila/librechat:v0.8.1-rc1
+    image: ghcr.io/danny-avila/librechat:v0.8.2
     container_name: LibreChat
     depends_on:
       mongodb:
         condition: service_healthy
       rag_api:
         condition: service_healthy
+      egress-proxy:
+        condition: service_started
       # caddy:
       #   condition: service_started
       mongo-init:
@@ -66,10 +106,18 @@ services:
       RAG_API_URL: http://rag_api:${RAG_PORT:-8000}
       # IMPORTANT: talk to the bundler by SERVICE NAME on the internal network
       # (Do NOT use host.docker.internal)
-      SANDPACK_BUNDLER_URL: http://127.0.0.1:80
-      # To use the optional static preview server, uncomment the following line
-      # and run the stack with the optional/static-preview/compose.yml file.
-      # SANDPACK_STATIC_BUNDLER_URL: https://preview.127.0.0.1.sslip.io
+      SANDPACK_BUNDLER_URL: http://sandpack:80
+      # Optional static preview service (see optional/static-preview/compose.yml).
+      # Defaults to localhost HTTP so no local certificate import is required.
+      SANDPACK_STATIC_BUNDLER_URL: ${SANDPACK_STATIC_BUNDLER_URL:-http://127.0.0.1:4324}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      NODE_OPTIONS: --require /app/proxy-bootstrap.cjs
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
       CONFIG_PATH: /run/secrets/librechat_yaml
       MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongodb:27017/LibreChat?authSource=LibreChat
     # No host binds — use named volumes only
@@ -77,11 +125,11 @@ services:
       - lbc_api_images:/app/client/public/images:ro
       - lbc_api_uploads:/app/uploads
       - lbc_app_data:/app/data
-    networks:
-      - lan    # internal comms (DBs, rag_api)
-      - wan    # allow egress to the internet
+      - ./optional/egress-proxy/undici-proxy-bootstrap.cjs:/app/proxy-bootstrap.cjs:ro
     ports:
       - "127.0.0.1:3080:3080"
+    networks:
+      - lan    # internal comms (DBs, rag_api, egress-proxy)
     secrets:
       - librechat_yaml
       - gcp_sa
@@ -202,13 +250,15 @@ services:
     # platform: linux/amd64
 
   # ──────────────────────────────────────────────────────────────────────────────
-  # RAG API (needs Internet access for querying the LLM)
+  # RAG API (egress only via egress-proxy)
   # ──────────────────────────────────────────────────────────────────────────────
   rag_api:
     image: ghcr.io/danny-avila/librechat-rag-api-dev-lite:65c64ed8bca3b1b7f259382570e98586e530c1be
     container_name: rag_api
     depends_on:
       vectordb:
+        condition: service_started
+      egress-proxy:
         condition: service_started
     env_file:
       - .env
@@ -217,9 +267,15 @@ services:
       RAG_HOST: 0.0.0.0
       DB_HOST: vectordb
       RAG_PORT: ${RAG_PORT:-8000}
+      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
     networks: 
       - lan
-      - wan
     restart: always
     # platform: linux/amd64
     secrets:

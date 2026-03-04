@@ -1,0 +1,17 @@
+# One domain per line. Prefix with a dot to allow all subdomains too.
+.opencode.ai
+
+# Vertex AI inference (global + regional endpoints) and Google auth token exchange.
+# Docs:
+# - Vertex AI REST service endpoints include aiplatform.googleapis.com and LOCATION-aiplatform.googleapis.com
+# - Service account JWT assertion audience is https://oauth2.googleapis.com/token
+aiplatform.googleapis.com
+oauth2.googleapis.com
+
+# Optional providers you may enable later in .env / librechat.yaml:
+.openai.com
+.anthropic.com
+.openrouter.ai
+generativelanguage.googleapis.com
+iamcredentials.googleapis.com
+sts.googleapis.com
