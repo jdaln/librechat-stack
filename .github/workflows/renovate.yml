@@ -1,0 +1,65 @@
+name: Renovate
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - dev
+    paths:
+      - ".github/workflows/renovate.yml"
+      - "renovate.json"
+  schedule:
+    - cron: "23 10 * * 1"
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  validate:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Validate Renovate Config On Dev Push
+        uses: renovatebot/github-action@v46.0.2
+        with:
+          configurationFile: renovate.json
+          token: ${{ github.token }}
+        env:
+          RENOVATE_DRY_RUN: full
+          RENOVATE_PLATFORM: github
+
+  renovate:
+    if: github.event_name != 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check Out
+        uses: actions/checkout@v4
+
+      - name: Check For Renovate Token
+        id: token
+        shell: bash
+        run: |
+          if [[ -n "${{ secrets.RENOVATE_TOKEN }}" ]]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skip Without Renovate Token
+        if: steps.token.outputs.present != 'true'
+        shell: bash
+        run: |
+          echo "RENOVATE_TOKEN is not set. Skipping real Renovate run."
+
+      - name: Run Renovate
+        if: steps.token.outputs.present == 'true'
+        uses: renovatebot/github-action@v46.0.2
+        with:
+          configurationFile: renovate.json
+          token: ${{ secrets.RENOVATE_TOKEN }}
+        env:
+          RENOVATE_PLATFORM: github
