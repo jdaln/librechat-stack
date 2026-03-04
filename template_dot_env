@@ -144,10 +144,10 @@ LIBRECHAT_CODE_API_KEY=24389_CHANGE_ME
 # Host port for direct health/docs checks from macOS.
 CODE_INTERPRETER_PORT=8001
 
-# Pinned upstream dev ref and resulting local image tag used by the helper script.
+# Pinned upstream commit and resulting local image tag used by the helper script.
 CODE_INTERPRETER_GIT_URL=https://github.com/usnavy13/LibreCodeInterpreter.git
-CODE_INTERPRETER_GIT_REF=31c1d5e90f735fb74968a6f61c2dc51c6e76de24
-CODE_INTERPRETER_IMAGE=librecodeinterpreter:31c1d5e
+CODE_INTERPRETER_GIT_REF=0dc767a13f5c1c15db7c5d780765bb00c4593989  # main — v1.2.0
+CODE_INTERPRETER_IMAGE=librecodeinterpreter:0dc767a
 
 # Internal object store credentials used by LibreCodeInterpreter.
 CODE_INTERPRETER_MINIO_ACCESS_KEY=minioadmin
@@ -193,7 +193,7 @@ JINA_API_URL=http://jina-reranker:8000/librechat/v1/rerank
 JINA_RERANKER_PORT=8787
 JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
 JINA_RERANKER_GIT_URL=https://github.com/freshe/librechat-jina-reranker-api.git
-JINA_RERANKER_GIT_REF=da638699215fc89814e623b3163f73dab859885c
+JINA_RERANKER_GIT_REF=da638699215fc89814e623b3163f73dab859885c  # main
 JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
 JINA_RERANKER_MAX_BATCH_SIZE=2
 JINA_RERANKER_OMP_NUM_THREADS=1

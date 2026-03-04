@@ -4,10 +4,10 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 JINA_RERANKER_GIT_URL="${JINA_RERANKER_GIT_URL:-https://github.com/freshe/librechat-jina-reranker-api.git}"
-JINA_RERANKER_GIT_REF="${JINA_RERANKER_GIT_REF:-da638699215fc89814e623b3163f73dab859885c}"
+JINA_RERANKER_GIT_REF="${JINA_RERANKER_GIT_REF:-da638699215fc89814e623b3163f73dab859885c}"  # main
 JINA_RERANKER_MODEL_NAME="${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v1-tiny-en}"
 JINA_RERANKER_IMAGE="${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-tiny-en}"
-CACHE_ROOT="${JINA_RERANKER_CACHE_ROOT:-${HOME}/Library/Caches/librechat-stack}"
+CACHE_ROOT="${JINA_RERANKER_CACHE_ROOT:-${XDG_CACHE_HOME:-${HOME}/.cache}/librechat-stack}"
 SOURCE_DIR="${CACHE_ROOT}/librechat-jina-reranker-${JINA_RERANKER_GIT_REF:0:12}-src"
 BUILD_DIR="${CACHE_ROOT}/librechat-jina-reranker-${JINA_RERANKER_GIT_REF:0:12}-build"
 
@@ -45,27 +45,29 @@ prepare_build_dir() {
 }
 
 build_image() {
+  log "Building ${JINA_RERANKER_IMAGE} with ${JINA_RERANKER_MODEL_NAME}"
+  DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}" docker build \
+    --build-arg MODEL_NAME="${JINA_RERANKER_MODEL_NAME}" \
+    -t "${JINA_RERANKER_IMAGE}" \
+    "${BUILD_DIR}"
+}
+
+main() {
+  require_bin docker
+
+  # Fast path: image already available locally
   if docker image inspect "${JINA_RERANKER_IMAGE}" >/dev/null 2>&1; then
     log "Jina reranker image already present: ${JINA_RERANKER_IMAGE}"
     return
   fi
 
-  log "Building ${JINA_RERANKER_IMAGE} with ${JINA_RERANKER_MODEL_NAME}"
-  if docker buildx version >/dev/null 2>&1; then
-    DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}" docker build \
-      --build-arg MODEL_NAME="${JINA_RERANKER_MODEL_NAME}" \
-      -t "${JINA_RERANKER_IMAGE}" \
-      "${BUILD_DIR}"
-  else
-    docker build \
-      --build-arg MODEL_NAME="${JINA_RERANKER_MODEL_NAME}" \
-      -t "${JINA_RERANKER_IMAGE}" \
-      "${BUILD_DIR}"
+  # Try pulling from a registry (works in CI with GHCR login)
+  if docker pull "${JINA_RERANKER_IMAGE}" 2>/dev/null; then
+    log "Pulled Jina reranker image: ${JINA_RERANKER_IMAGE}"
+    return
   fi
-}
 
-main() {
-  require_bin docker
+  # Fall back to building from source
   require_bin git
   require_bin rsync
   require_bin perl
