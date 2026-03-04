@@ -1,16 +1,13 @@
 {
-  # no automatic public ACME; we supply our own cert
-  auto_https off
+  auto_https disable_redirects
 }
 
-preview.127.0.0.1.sslip.io, *.127.0.0.1.sslip.io {
-  tls /run/secrets/tls_cert /run/secrets/tls_key
-
-  # helpful CORS for Sandpack relay
+:80 {
+  # CORS for Sandpack relay from LibreChat UI (127.0.0.1:3080)
   header {
     Access-Control-Allow-Origin  "*"
     Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
-    Access-Control-Allow-Headers "Content-Type, Authorization"
+    Access-Control-Allow-Headers "*"
     Access-Control-Max-Age       "3600"
   }
 

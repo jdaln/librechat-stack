@@ -1,11 +1,10 @@
 services:
   static_preview:
     build:
-      context: .
+      context: ./optional/static-preview
       dockerfile: Dockerfile.sandpack-static
     image: librechat/static-preview:local
     container_name: sandpack-static
-    # Do NOT publish to host; Caddy fronts it on 443
     networks: [lan, wan]
     restart: always
     healthcheck:
@@ -21,25 +20,17 @@ services:
     depends_on:
       static_preview:
         condition: service_healthy
-    # expose HTTPS to your Mac only
+    # Expose localhost HTTP proxy (CORS enabled) for browser preview fetches.
     ports:
-      - "127.0.0.1:443:443"
+      - "127.0.0.1:4324:80"
     networks:
       - wan
       - lan
     secrets:
       - source: caddyfile
         target: /etc/caddy/Caddyfile
-      - source: tls_cert
-        target: /run/secrets/tls_cert
-      - source: tls_key
-        target: /run/secrets/tls_key
     restart: always
 
 secrets:
   caddyfile:
-    file: ./Caddyfile
-  tls_cert:
-    file: ../secrets/sslip.crt
-  tls_key:
-    file: ../secrets/sslip.key
+    file: ./optional/static-preview/Caddyfile
