@@ -1,0 +1,247 @@
+volumes:
+  searxng_data: {}
+  searxng_valkey_data: {}
+  jina_reranker_model_cache: {}
+  firecrawl_redis_data: {}
+  firecrawl_postgres_data: {}
+
+networks:
+  search:
+    internal: true
+
+services:
+  api:
+    depends_on:
+      searxng:
+        condition: service_started
+      firecrawl-api:
+        condition: service_healthy
+      jina-reranker:
+        condition: service_healthy
+    networks:
+      - lan
+      - search
+    environment:
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,jina-reranker,firecrawl-api
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,jina-reranker,firecrawl-api
+      LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-3}
+      LIBRECHAT_WEB_SEARCH_MAX_SOURCES: ${LIBRECHAT_WEB_SEARCH_MAX_SOURCES:-2}
+      LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT:-2}
+      LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT:-8000}
+      LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT:-300}
+      LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT:-350}
+    volumes:
+      - ./optional/local-search/librechat-patches/search.cjs:/app/node_modules/@librechat/agents/dist/cjs/tools/search/search.cjs:ro
+      - ./optional/local-search/librechat-patches/tool.cjs:/app/node_modules/@librechat/agents/dist/cjs/tools/search/tool.cjs:ro
+
+  searxng:
+    image: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:dc9c7aae0b77f8cd819dd8c7e6d489eab456000838e062c399f2bf37d230500e}
+    container_name: searxng
+    restart: always
+    environment:
+      SEARXNG_PORT: 8080
+      SEARXNG_BIND_ADDRESS: 0.0.0.0
+      SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080/}
+      SEARXNG_LIMITER: "true"
+      SEARXNG_SECRET: ${SEARXNG_SECRET:-change-me-search-secret}
+    volumes:
+      - ./optional/local-search/searxng/settings.yml:/etc/searxng/settings.yml:ro
+      - ./optional/local-search/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
+      - searxng_data:/var/cache/searxng
+    networks:
+      - search
+      - wan
+    ports:
+      - "127.0.0.1:${SEARXNG_PORT:-8080}:8080"
+    depends_on:
+      searxng-valkey:
+        condition: service_healthy
+
+  searxng-valkey:
+    image: ${SEARXNG_VALKEY_IMAGE:-valkey/valkey:8-alpine}
+    container_name: searxng-valkey
+    restart: always
+    command: ["valkey-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - searxng_valkey_data:/data
+    networks:
+      - search
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  firecrawl-api:
+    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest@sha256:da24beae7325fbd42000bb9025ce982fd2de7c5fb819e9eeacb0e668b01b2f9e}
+    container_name: firecrawl-api
+    restart: always
+    command: ["node", "dist/src/harness.js", "--start-docker"]
+    environment:
+      HOST: 0.0.0.0
+      PORT: 3002
+      ENV: local
+      LOGGING_LEVEL: info
+      FIRECRAWL_NO_TELEMETRY: 1
+      DO_NOT_TRACK: 1
+      REDIS_URL: redis://firecrawl-redis:6379
+      REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
+      NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      POSTGRES_HOST: firecrawl-postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
+      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-change-me-firecrawl-bull-auth}
+      MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-2}
+      NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-2}
+      CRAWL_CONCURRENT_REQUESTS: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-4}
+      BROWSER_POOL_SIZE: ${FIRECRAWL_BROWSER_POOL_SIZE:-2}
+      EXTRACT_WORKER_PORT: 3004
+      WORKER_PORT: 3005
+      USE_DB_AUTHENTICATION: "false"
+      PROXY_SERVER: ""
+      PROXY_USERNAME: ""
+      PROXY_PASSWORD: ""
+      OPENAI_API_KEY: ""
+      OPENAI_BASE_URL: ""
+      MODEL_NAME: ""
+      MODEL_EMBEDDING_NAME: ""
+      OLLAMA_BASE_URL: ""
+      SELF_HOSTED_WEBHOOK_URL: ""
+      SLACK_WEBHOOK_URL: ""
+      SUPABASE_URL: ""
+      SUPABASE_ANON_TOKEN: ""
+      SUPABASE_SERVICE_TOKEN: ""
+      TEST_API_KEY: ""
+      SEARXNG_ENDPOINT: ""
+      SEARXNG_ENGINES: ""
+      SEARXNG_CATEGORIES: ""
+    depends_on:
+      firecrawl-redis:
+        condition: service_healthy
+      firecrawl-rabbitmq:
+        condition: service_healthy
+      firecrawl-postgres:
+        condition: service_healthy
+      firecrawl-playwright:
+        condition: service_healthy
+    networks:
+      - search
+      - wan
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3002/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 90s
+
+  firecrawl-playwright:
+    image: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest@sha256:5ac4f1e77dac2a8cc7742d822ce9d644e05166df41ae02ada1ed53d4d8cf3cd7}
+    container_name: firecrawl-playwright
+    restart: always
+    environment:
+      PORT: 3000
+      MAX_CONCURRENT_PAGES: ${FIRECRAWL_MAX_CONCURRENT_PAGES:-4}
+      FIRECRAWL_NO_TELEMETRY: 1
+      DO_NOT_TRACK: 1
+      BLOCK_MEDIA: ${FIRECRAWL_BLOCK_MEDIA:-}
+      PROXY_SERVER: ""
+      PROXY_USERNAME: ""
+      PROXY_PASSWORD: ""
+    networks:
+      - search
+      - wan
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\""
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  firecrawl-redis:
+    image: ${FIRECRAWL_REDIS_IMAGE:-redis:alpine@sha256:2afba59292f25f5d1af200496db41bea2c6c816b059f57ae74703a50a03a27d0}
+    container_name: firecrawl-redis
+    restart: always
+    command: ["redis-server", "--bind", "0.0.0.0"]
+    volumes:
+      - firecrawl_redis_data:/data
+    networks:
+      - search
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  firecrawl-rabbitmq:
+    image: ${FIRECRAWL_RABBITMQ_IMAGE:-rabbitmq:3-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69}
+    container_name: firecrawl-rabbitmq
+    restart: always
+    networks:
+      - search
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 15s
+      timeout: 10s
+      retries: 8
+
+  firecrawl-postgres:
+    image: ${FIRECRAWL_POSTGRES_IMAGE:-ghcr.io/firecrawl/nuq-postgres:latest@sha256:8565e5f46000085c16d247a4354c41e2439dbcf1640f7dd6e6406c0b18c31732}
+    container_name: firecrawl-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: postgres
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - firecrawl_postgres_data:/var/lib/postgresql/data
+    networks:
+      - search
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  jina-reranker:
+    image: ${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-tiny-en}
+    container_name: jina-reranker
+    restart: always
+    env_file:
+      - .env
+    environment:
+      SERVER_HOST: 0.0.0.0
+      SERVER_PORT: 8000
+      MODEL_NAME: ${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v1-tiny-en}
+      CACHE_DIR: /app/.cache
+      TOKENIZERS_PARALLELISM: "false"
+      OMP_NUM_THREADS: ${JINA_RERANKER_OMP_NUM_THREADS:-1}
+      JINA_RERANKER_MAX_BATCH_SIZE: ${JINA_RERANKER_MAX_BATCH_SIZE:-2}
+    volumes:
+      - jina_reranker_model_cache:/app/.cache
+      - ./optional/local-search/jina/api.py:/app/api.py:ro
+      - ./optional/local-search/jina/models.py:/app/models.py:ro
+    networks:
+      - search
+    ports:
+      - "127.0.0.1:${JINA_RERANKER_PORT:-8787}:8000"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').getcode() == 200 else 1)\""
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s

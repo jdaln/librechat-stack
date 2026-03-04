@@ -1,0 +1,29 @@
+use_default_settings:
+  engines:
+    remove:
+      - ahmia
+      - google
+      - torch
+
+general:
+  instance_name: "LibreChat Local Search"
+
+search:
+  safe_search: 1
+  formats:
+    - html
+    - json
+
+outgoing:
+  request_timeout: 4.0
+
+server:
+  base_url: http://searxng:8080/
+  limiter: true
+  image_proxy: false
+
+valkey:
+  url: valkey://searxng-valkey:6379/0
+
+ui:
+  static_use_hash: true
