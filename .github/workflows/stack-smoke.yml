@@ -35,8 +35,8 @@ jobs:
           cat > .env <<'EOF'
           APP_TITLE=LibreChat CI
           ENDPOINTS=openAI,agents
-          DOMAIN_CLIENT=http://localhost:3080
-          DOMAIN_SERVER=http://localhost:3080
+          DOMAIN_CLIENT=http://localhost:3081
+          DOMAIN_SERVER=http://localhost:3081
           NO_INDEX=true
           TRUST_PROXY=1
 

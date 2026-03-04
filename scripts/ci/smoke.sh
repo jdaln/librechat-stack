@@ -4,6 +4,8 @@ set -Eeuo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
+INGRESS_URL="${INGRESS_URL:-http://127.0.0.1:3081}"
+
 compose_files=(
   -f docker-compose.yml
   -f compose.hardening.yml
@@ -60,7 +62,7 @@ compose \
   up -d
 
 log "Waiting for LibreChat ingress"
-wait_http "http://127.0.0.1:3080/login"
+wait_http "${INGRESS_URL}/login"
 
 log "Waiting for code interpreter health endpoint"
 wait_http "http://127.0.0.1:8001/health"
