@@ -202,21 +202,28 @@ services:
     command:
       - /bin/sh
       - -lc
-      - >
-        mongosh "mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/admin?authSource=admin"
-        --eval "
-          const u = process.env.MONGO_APP_USER;
-          const p = process.env.MONGO_APP_PASSWORD;
-          const dbName = 'LibreChat';
-          const d = db.getSiblingDB(dbName);
-          if (!d.getUser(u)) {
-            d.createUser({ user: u, pwd: p, roles: [ { role: 'readWrite', db: dbName } ] });
-            print('created user ' + u);
-          } else {
-            d.updateUser(u, { pwd: p });
-            print('user ' + u + ' already exists (password refreshed)');
-          }
-        "
+      - |
+        for i in $(seq 1 30); do
+          if mongosh "mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/admin?authSource=admin" --eval "
+            const u = process.env.MONGO_APP_USER;
+            const p = process.env.MONGO_APP_PASSWORD;
+            const dbName = 'LibreChat';
+            const d = db.getSiblingDB(dbName);
+            if (!d.getUser(u)) {
+              d.createUser({ user: u, pwd: p, roles: [ { role: 'readWrite', db: dbName } ] });
+              print('created user ' + u);
+            } else {
+              d.updateUser(u, { pwd: p });
+              print('user ' + u + ' already exists (password refreshed)');
+            }
+          "; then
+            exit 0
+          fi
+          echo "mongo-init retry $${i}/30" >&2
+          sleep 2
+        done;
+        echo "mongo-init failed after retries" >&2
+        exit 1
   
   # ──────────────────────────────────────────────────────────────────────────────
   # Meilisearch (internal only)

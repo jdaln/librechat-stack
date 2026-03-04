@@ -69,7 +69,7 @@ jobs:
           OPENAI_TITLE_MODEL=big-pickle
 
           EGRESS_PROXY_URL=http://egress-proxy:3128
-          NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy
+          NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api
 
           LIBRECHAT_CODE_BASEURL=http://code-interpreter-api:8000
           LIBRECHAT_CODE_API_KEY=ci-local-code-key
@@ -142,3 +142,12 @@ jobs:
           CACHE="ghcr.io/${{ github.repository_owner }}/librechat-jina-reranker:da638699-tiny-en"
           docker tag "librechat-jina-reranker:da638699-tiny-en" "${CACHE}"
           docker push "${CACHE}"
+
+      - name: Upload Smoke Diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: stack-smoke-diagnostics
+          path: ci_artifacts/
+          if-no-files-found: warn
+          retention-days: 7

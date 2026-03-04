@@ -3,4 +3,5 @@ secrets/*.json
 secrets/*.crt
 secrets/*.key
 *.log
+ci_artifacts/
 .DS_Store
