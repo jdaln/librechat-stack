@@ -1,0 +1,6 @@
+.env
+secrets/*.json
+secrets/*.crt
+secrets/*.key
+*.log
+.DS_Store
