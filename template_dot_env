@@ -13,6 +13,24 @@
 # The title displayed in the web interface.
 APP_TITLE=LibreChatViaGoogle
 
+# Comma-separated LibreChat endpoints to expose in the UI/runtime.
+# Include `agents` if you want saved Agents and their tool capabilities.
+ENDPOINTS=openAI,agents
+
+# ------------------------------------------------------------------------------
+# Optional: OpenAI-Compatible Providers
+# ------------------------------------------------------------------------------
+
+# Existing OpenCode Zen/OpenAI-compatible endpoint.
+OPENAI_API_KEY=public
+OPENAI_MODELS=minimax-m2.5-free,big-pickle
+OPENAI_REVERSE_PROXY=https://opencode.ai/zen/v1
+OPENAI_TITLE_MODEL=minimax-m2.5-free
+
+# Optional OpenRouter custom endpoint configured in librechat.yaml.
+# Keep the real key only in your local .env.
+OPENROUTER_API_KEY=24389_CHANGE_ME
+
 # ------------------------------------------------------------------------------
 # Networking
 # ------------------------------------------------------------------------------
@@ -104,6 +122,89 @@ PDF_EXTRACT_IMAGES=True
 # Advanced/Internal Settings
 # These are default values that should work for most local setups.
 # ------------------------------------------------------------------------------
+
+# Explicit egress proxy used by api/rag_api in docker-compose.yml.
+# Keep this on the internal service address unless you intentionally change it.
+EGRESS_PROXY_URL=http://egress-proxy:3128
+
+# Internal hosts that should bypass proxying.
+NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy
+
+# ------------------------------------------------------------------------------
+# Optional: LibreCodeInterpreter (custom execute_code backend)
+# Enabled by adding -f optional/code-interpreter/compose.yml or
+# setting ENABLE_CODE_INTERPRETER=1 when using scripts/start_stack.sh.
+# ------------------------------------------------------------------------------ 
+
+# LibreChat -> code interpreter API wiring.
+# Keep the internal default unless you intentionally route to another backend.
+LIBRECHAT_CODE_BASEURL=http://code-interpreter-api:8000
+LIBRECHAT_CODE_API_KEY=24389_CHANGE_ME
+
+# Host port for direct health/docs checks from macOS.
+CODE_INTERPRETER_PORT=8001
+
+# Pinned upstream dev ref and resulting local image tag used by the helper script.
+CODE_INTERPRETER_GIT_URL=https://github.com/usnavy13/LibreCodeInterpreter.git
+CODE_INTERPRETER_GIT_REF=31c1d5e90f735fb74968a6f61c2dc51c6e76de24
+CODE_INTERPRETER_IMAGE=librecodeinterpreter:31c1d5e
+
+# Internal object store credentials used by LibreCodeInterpreter.
+CODE_INTERPRETER_MINIO_ACCESS_KEY=minioadmin
+CODE_INTERPRETER_MINIO_SECRET_KEY=minioadmin
+CODE_INTERPRETER_MINIO_BUCKET=code-interpreter-files
+CODE_INTERPRETER_LOG_LEVEL=INFO
+CODE_INTERPRETER_REPL_ENABLED=false
+CODE_INTERPRETER_SANDBOX_POOL_ENABLED=false
+
+# ------------------------------------------------------------------------------
+# Optional: Local Web Search
+# Enabled by adding -f optional/local-search/compose.yml or
+# setting ENABLE_LOCAL_SEARCH=1 when using scripts/start_stack.sh.
+# Uses official SearXNG, an in-stack Firecrawl API, and a local
+# Jina-compatible reranker API.
+# ------------------------------------------------------------------------------
+
+SEARXNG_INSTANCE_URL=http://searxng:8080
+SEARXNG_API_KEY=
+SEARXNG_PORT=8080
+SEARXNG_BASE_URL=http://searxng:8080/
+SEARXNG_SECRET=24389_CHANGE_ME
+SEARXNG_IMAGE=searxng/searxng:latest@sha256:dc9c7aae0b77f8cd819dd8c7e6d489eab456000838e062c399f2bf37d230500e
+SEARXNG_VALKEY_IMAGE=valkey/valkey:8-alpine
+
+FIRECRAWL_API_KEY=local-firecrawl
+FIRECRAWL_API_URL=http://firecrawl-api:3002
+FIRECRAWL_VERSION=v2
+FIRECRAWL_BULL_AUTH_KEY=24389_CHANGE_ME
+FIRECRAWL_MAX_CONCURRENT_JOBS=2
+FIRECRAWL_NUM_WORKERS_PER_QUEUE=2
+FIRECRAWL_CRAWL_CONCURRENT_REQUESTS=4
+FIRECRAWL_BROWSER_POOL_SIZE=2
+FIRECRAWL_MAX_CONCURRENT_PAGES=4
+FIRECRAWL_IMAGE=ghcr.io/firecrawl/firecrawl:latest@sha256:da24beae7325fbd42000bb9025ce982fd2de7c5fb819e9eeacb0e668b01b2f9e
+FIRECRAWL_PLAYWRIGHT_IMAGE=ghcr.io/firecrawl/playwright-service:latest@sha256:5ac4f1e77dac2a8cc7742d822ce9d644e05166df41ae02ada1ed53d4d8cf3cd7
+FIRECRAWL_POSTGRES_IMAGE=ghcr.io/firecrawl/nuq-postgres:latest@sha256:8565e5f46000085c16d247a4354c41e2439dbcf1640f7dd6e6406c0b18c31732
+FIRECRAWL_REDIS_IMAGE=redis:alpine@sha256:2afba59292f25f5d1af200496db41bea2c6c816b059f57ae74703a50a03a27d0
+FIRECRAWL_RABBITMQ_IMAGE=rabbitmq:3-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69
+
+JINA_API_KEY=local-jina
+JINA_API_URL=http://jina-reranker:8000/librechat/v1/rerank
+JINA_RERANKER_PORT=8787
+JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
+JINA_RERANKER_GIT_URL=https://github.com/freshe/librechat-jina-reranker-api.git
+JINA_RERANKER_GIT_REF=da638699215fc89814e623b3163f73dab859885c
+JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
+JINA_RERANKER_MAX_BATCH_SIZE=2
+JINA_RERANKER_OMP_NUM_THREADS=1
+
+# Bounded local-search defaults to avoid oversized model/tool context.
+LIBRECHAT_WEB_SEARCH_RESULT_COUNT=3
+LIBRECHAT_WEB_SEARCH_MAX_SOURCES=2
+LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT=2
+LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT=8000
+LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT=300
+LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT=350
 
 # The domain for the client and server. These are used for CORS and other
 # internal settings. For a local setup, the default is usually correct.
