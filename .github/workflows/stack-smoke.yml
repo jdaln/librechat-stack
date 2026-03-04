@@ -102,7 +102,7 @@ jobs:
           JINA_API_URL=http://jina-reranker:8000/librechat/v1/rerank
           JINA_RERANKER_PORT=8787
           JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
-          JINA_RERANKER_IMAGE=ghcr.io/${{ github.repository_owner }}/librechat-jina-reranker:da638699-tiny-en
+          JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
           JINA_RERANKER_MAX_BATCH_SIZE=2
           JINA_RERANKER_OMP_NUM_THREADS=1
 
@@ -121,12 +121,24 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Cache Pull Jina Reranker
+        continue-on-error: true
+        run: |
+          CACHE="ghcr.io/${{ github.repository_owner }}/librechat-jina-reranker:da638699-tiny-en"
+          if docker pull "${CACHE}"; then
+            docker tag "${CACHE}" "librechat-jina-reranker:da638699-tiny-en"
+          fi
+
       - name: Run Stack Smoke
         shell: bash
         run: |
           chmod +x scripts/ci/smoke.sh
           ./scripts/ci/smoke.sh
 
-      - name: Push Jina Image to GHCR
+      - name: Cache Push Jina Reranker
         if: always()
-        run: docker push "ghcr.io/${{ github.repository_owner }}/librechat-jina-reranker:da638699-tiny-en" 2>/dev/null || true
+        continue-on-error: true
+        run: |
+          CACHE="ghcr.io/${{ github.repository_owner }}/librechat-jina-reranker:da638699-tiny-en"
+          docker tag "librechat-jina-reranker:da638699-tiny-en" "${CACHE}"
+          docker push "${CACHE}"

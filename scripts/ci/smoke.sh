@@ -53,10 +53,6 @@ compose \
   config -q
 
 log "Preparing local Jina reranker image"
-# Export the image name from .env so the build script tags with the same
-# (possibly GHCR-prefixed) name that compose will reference.
-export JINA_RERANKER_IMAGE
-JINA_RERANKER_IMAGE="$(grep '^[[:space:]]*JINA_RERANKER_IMAGE=' .env | tail -1 | cut -d= -f2-)"
 ./scripts/prepare_jina_reranker_image.sh
 
 log "Starting hardened stack with code interpreter and local search overlays"
