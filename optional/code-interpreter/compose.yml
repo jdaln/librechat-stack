@@ -1,0 +1,125 @@
+volumes:
+  code_interpreter_sandbox_data: {}
+  code_interpreter_redis_data: {}
+  code_interpreter_minio_data: {}
+
+services:
+  api:
+    depends_on:
+      code-interpreter-api:
+        condition: service_healthy
+    environment:
+      LIBRECHAT_CODE_BASEURL: ${LIBRECHAT_CODE_BASEURL:-http://code-interpreter-api:8000}
+      LIBRECHAT_CODE_API_KEY: ${LIBRECHAT_CODE_API_KEY:-local-code-interpreter-key-change-me}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},code-interpreter-api,code-interpreter-redis,code-interpreter-minio
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},code-interpreter-api,code-interpreter-redis,code-interpreter-minio
+
+  code-interpreter-api:
+    image: ${CODE_INTERPRETER_IMAGE:-librecodeinterpreter:31c1d5e}
+    container_name: code-interpreter-api
+    restart: always
+    init: true
+    command:
+      - /bin/sh
+      - -lc
+      - mkdir -p /app/ssl /tmp/empty_proc && exec python3 -m src.main
+    cap_add:
+      - SYS_ADMIN
+    security_opt:
+      - no-new-privileges:true
+      - apparmor:unconfined
+    ports:
+      - "127.0.0.1:${CODE_INTERPRETER_PORT:-8001}:8000"
+    env_file:
+      - .env
+    environment:
+      API_KEY: ${LIBRECHAT_CODE_API_KEY:-local-code-interpreter-key-change-me}
+      REDIS_HOST: code-interpreter-redis
+      REDIS_PORT: 6379
+      MINIO_ENDPOINT: code-interpreter-minio:9000
+      MINIO_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:-minioadmin}
+      MINIO_BUCKET: ${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files}
+      MINIO_SECURE: "false"
+      PORT: 8000
+      ENABLE_HTTPS: "false"
+      LOG_LEVEL: ${CODE_INTERPRETER_LOG_LEVEL:-INFO}
+      REPL_ENABLED: ${CODE_INTERPRETER_REPL_ENABLED:-false}
+      SANDBOX_POOL_ENABLED: ${CODE_INTERPRETER_SANDBOX_POOL_ENABLED:-false}
+    volumes:
+      - code_interpreter_sandbox_data:/var/lib/code-interpreter/sandboxes
+    tmpfs:
+      - /app/data:size=100m
+      - /tmp:size=1g
+      - /run:size=128m
+    depends_on:
+      code-interpreter-redis:
+        condition: service_healthy
+      code-interpreter-minio-init:
+        condition: service_completed_successfully
+    networks:
+      - lan
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:8000/health"]
+      interval: 30s
+      timeout: 15s
+      retries: 5
+      start_period: 60s
+
+  code-interpreter-redis:
+    image: redis:7.4-alpine
+    container_name: code-interpreter-redis
+    restart: always
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - code_interpreter_redis_data:/data
+    networks:
+      - lan
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  code-interpreter-minio:
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    container_name: code-interpreter-minio
+    restart: always
+    environment:
+      MINIO_ROOT_USER: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${CODE_INTERPRETER_MINIO_SECRET_KEY:-minioadmin}
+    command: server /data --console-address ":9001"
+    volumes:
+      - code_interpreter_minio_data:/data
+    networks:
+      - lan
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  code-interpreter-minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    container_name: code-interpreter-minio-init
+    depends_on:
+      code-interpreter-minio:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://code-interpreter-minio:9000 $${CODE_INTERPRETER_MINIO_ACCESS_KEY:-minioadmin} $${CODE_INTERPRETER_MINIO_SECRET_KEY:-minioadmin};
+      mc mb --ignore-existing local/$${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files};
+      exit 0;
+      "
+    environment:
+      CODE_INTERPRETER_MINIO_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:-minioadmin}
+      CODE_INTERPRETER_MINIO_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:-minioadmin}
+      CODE_INTERPRETER_MINIO_BUCKET: ${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files}
+    networks:
+      - lan
