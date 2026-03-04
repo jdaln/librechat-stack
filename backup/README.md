@@ -18,7 +18,7 @@ Create `~/Library/LaunchAgents/com.YOURUSER.librechat.backup.plist` (replace `YO
 
   <key>EnvironmentVariables</key>
   <dict>
-    <key>DOCKER_CONTEXT</key><string>colima-hostile</string>
+    <key>DOCKER_CONTEXT</key><string>colima-aiarm</string>
     <key>PROJECT_NET</key><string>librechat-stack_lan</string>
     <key>RETENTION_DAYS</key><string>14</string>
   </dict>
@@ -55,4 +55,3 @@ Run it once by hand to verify:
 ~/.local/bin/backup_librechat.sh
 open "$HOME/Backups/LibreChatBackups"
 ```
-
