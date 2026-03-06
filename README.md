@@ -67,6 +67,7 @@ exit
 
 The `api` and `rag_api` containers have no direct internet access. All their outbound HTTP(S) goes through an internal Squid proxy that only allows domains listed in `optional/egress-proxy/allowed_domains.txt`.
 The `sandpack` container is LAN-only (no WAN attachment); browser access on `http://127.0.0.1:80` is proxied through `api-proxy`.
+`api-proxy` stays dual-homed (`lan` + `wan`) because Docker host port publishing on this stack breaks when the proxy is attached only to an `internal: true` network.
 
 If an LLM prompt injection tries to exfiltrate data to an unknown host, Squid blocks it. Quick verification:
 
