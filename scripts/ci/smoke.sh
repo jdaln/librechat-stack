@@ -6,6 +6,7 @@ cd "${ROOT_DIR}"
 
 INGRESS_URL="${INGRESS_URL:-http://127.0.0.1:3081}"
 ARTIFACTS_DIR="${CI_ARTIFACTS_DIR:-ci_artifacts}"
+SMOKE_CLEAN_VOLUMES="${SMOKE_CLEAN_VOLUMES:-0}"
 
 compose_files=(
   -f docker-compose.yml
@@ -49,6 +50,19 @@ compose() {
 
 log() {
   printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$*"
+}
+
+compose_down() {
+  local -a down_args
+  down_args=(
+    --env-file .env
+    "${compose_files[@]}"
+    down
+  )
+  if [[ "${SMOKE_CLEAN_VOLUMES}" == "1" ]]; then
+    down_args+=(-v)
+  fi
+  compose "${down_args[@]}"
 }
 
 wait_http() {
@@ -108,10 +122,7 @@ cleanup() {
     docker ps -a >"${ARTIFACTS_DIR}/docker-ps-a.txt" 2>&1 || true
   fi
 
-  compose \
-    --env-file .env \
-    "${compose_files[@]}" \
-    down -v || true
+  compose_down || true
 
   exit "${exit_code}"
 }
@@ -129,10 +140,7 @@ log "Preparing local Jina reranker image"
 ./scripts/prepare_jina_reranker_image.sh
 
 log "Ensuring clean compose state"
-compose \
-  --env-file .env \
-  "${compose_files[@]}" \
-  down -v || true
+compose_down || true
 
 log "Starting hardened stack with code interpreter and local search overlays"
 compose \

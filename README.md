@@ -232,6 +232,7 @@ Installs a macOS LaunchAgent that runs `start_stack.sh` at login. Logs: `~/Libra
 ## CI & Dependency Updates
 
 - **Stack Smoke** (`.github/workflows/stack-smoke.yml`) runs on push/PR to `main` and `dev`. Tests egress policy, OpenCode reachability, code interpreter execution, agent tool flow, and local search end-to-end.
+- Local smoke behavior: `scripts/ci/smoke.sh` keeps volumes by default (`SMOKE_CLEAN_VOLUMES=0`) so chat history persists on your machine. Set `SMOKE_CLEAN_VOLUMES=1` when you intentionally want a full data reset.
 - **Renovate** ([renovate.json](renovate.json)) runs weekly targeting `dev`, with dry-run validation on config pushes. Needs a `RENOVATE_TOKEN` repo secret (`repo` + `workflow` scopes) for real PRs.
 
 ---
