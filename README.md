@@ -28,13 +28,15 @@ $EDITOR .env              # set API keys, secrets, etc.
 ./scripts/start_stack.sh  # handles context switch + compose up
 ```
 
-The helper script starts Colima if needed, switches Docker context, and runs `docker compose up -d`. To start manually instead:
+The helper script starts Colima if needed, switches Docker context, enforces `secrets/gcp-sa.json` file mode `600` when present, and runs `docker compose up -d`. To start manually instead:
 
 ```bash
 docker context use colima-aiarm
 docker compose --env-file .env \
   -f docker-compose.yml -f compose.hardening.yml up -d
 ```
+
+Open the app at `http://localhost:3081` (through `api-proxy`).
 
 > Every `docker compose` invocation below assumes the same base flags
 > (`--env-file .env -f docker-compose.yml -f compose.hardening.yml`)
@@ -84,7 +86,7 @@ const test=(h)=>new Promise(r=>{\
 
 Edit the allowlist and restart the proxy to change which domains are permitted.
 
-When the local-search overlay is enabled, SearXNG/Firecrawl egress is intentionally routed through Squid with full access logging so outbound search fetches are auditable.
+When the local-search overlay is enabled, SearXNG/Firecrawl egress is routed through Squid with full access logging. By design this path is auditable but not domain-allowlisted, so the stack can scrape arbitrary result domains.
 
 ---
 
@@ -158,6 +160,7 @@ The helper script (`scripts/prepare_code_interpreter_image.sh`) clones the upstr
 - Interpreter traffic stays on the internal `lan` network — no WAN egress.
 - `api` sets `HTTP_PROXY`/`HTTPS_PROXY` but not `PROXY`, so `execute_code` calls reach the interpreter directly without Squid.
 - MinIO is pinned to `RELEASE.2025-09-07` (later images went source-only).
+- MinIO credentials in `template_dot_env` are intentionally non-default placeholders. Set strong values before enabling this overlay.
 - `librechat.yaml` must list `execute_code` in `endpoints.agents.capabilities` (it does by default).
 
 </details>
@@ -237,6 +240,12 @@ colima list && docker context use colima-aiarm && ./scripts/start_stack.sh
 **Env warnings in compose config?**
 ```bash
 docker compose --env-file .env config | head -60
+```
+
+**Can’t reach `http://localhost:3080`?**
+```bash
+# Direct api port exposure is intentionally disabled.
+open http://localhost:3081
 ```
 
 **Artifact preview is blank / `non-precached-url` in console?**

@@ -168,6 +168,13 @@ compose_up() {
   )
 }
 
+ensure_secret_permissions() {
+  local gcp_sa="${PROJECT_ROOT}/secrets/gcp-sa.json"
+  if [[ -f "${gcp_sa}" ]]; then
+    chmod 600 "${gcp_sa}" || true
+  fi
+}
+
 main() {
   require_bin colima
   require_bin docker
@@ -183,6 +190,7 @@ main() {
 
   prepare_code_interpreter
   prepare_local_search
+  ensure_secret_permissions
 
   log "Resolved stack profile: ${STACK_PROFILE:-manual-flags} (static_preview=${ENABLE_STATIC_PREVIEW}, code_interpreter=${ENABLE_CODE_INTERPRETER}, local_search=${ENABLE_LOCAL_SEARCH})"
   compose_up

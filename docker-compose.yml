@@ -56,7 +56,7 @@ services:
   # Egress proxy (the only service with outbound Internet for API/RAG)
   # ──────────────────────────────────────────────────────────────────────────────
   egress-proxy:
-    image: ubuntu/squid:latest
+    image: ubuntu/squid:latest@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
     container_name: egress-proxy
     networks:
       - lan
@@ -136,8 +136,6 @@ services:
       - lbc_app_data:/app/data
       - ./optional/librechat/registerSW.noop.js:/app/client/dist/registerSW.js:ro
       - ./optional/egress-proxy/undici-proxy-bootstrap.cjs:/app/proxy-bootstrap.cjs:ro
-    ports:
-      - "127.0.0.1:3080:3080"
     networks:
       - lan    # internal comms (DBs, rag_api, egress-proxy)
     secrets:
@@ -307,7 +305,11 @@ services:
     secrets:
       - gcp_sa
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import os,sys,socket; s=socket.socket(); s.settimeout(2); s.connect(('127.0.0.1', int(os.getenv('RAG_PORT','8000')))); s.close()\""]
+      test:
+        [
+          "CMD-SHELL",
+          "python -c \"import os,sys,urllib.request; u='http://127.0.0.1:'+os.getenv('RAG_PORT','8000')+'/health'; sys.exit(0 if urllib.request.urlopen(u, timeout=2).getcode()==200 else 1)\""
+        ]
       interval: 10s
       timeout: 3s
       retries: 10
