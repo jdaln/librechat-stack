@@ -178,6 +178,9 @@ CODE_INTERPRETER_SANDBOX_POOL_ENABLED=false
 # Jina-compatible reranker API.
 # ------------------------------------------------------------------------------
 
+# API-side SearX endpoint; defaults to internal auth proxy when local-search overlay is enabled.
+SEARXNG_INSTANCE_URL_INTERNAL=http://searxng-auth:8080
+# Optional external override retained for compatibility with custom LibreChat configs.
 SEARXNG_INSTANCE_URL=http://searxng:8080
 SEARXNG_API_KEY=24389_CHANGE_ME
 SEARXNG_PORT=8080

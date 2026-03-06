@@ -183,10 +183,57 @@ if grep -q 'MONGO_ROOT_PASSWORD=' <<<"${mongo_init_env}" || grep -q 'MONGO_APP_P
   exit 1
 fi
 
+log "Checking local-search and interpreter secret hygiene"
+api_env="$(docker inspect LibreChat --format '{{json .Config.Env}}')"
+if grep -q 'SEARXNG_API_KEY=' <<<"${api_env}"; then
+  if grep -q 'SEARXNG_API_KEY=$' <<<"${api_env}" || \
+     grep -q 'SEARXNG_API_KEY=24389_CHANGE_ME' <<<"${api_env}" || \
+     grep -q 'SEARXNG_API_KEY=change-me-searxng-api-key' <<<"${api_env}"; then
+    echo "SEARXNG_API_KEY is unset or placeholder in LibreChat env" >&2
+    exit 1
+  fi
+fi
+
+code_env="$(docker inspect code-interpreter-api --format '{{json .Config.Env}}')"
+if grep -q 'MINIO_ACCESS_KEY=minioadmin' <<<"${code_env}" || grep -q 'MINIO_SECRET_KEY=minioadmin' <<<"${code_env}"; then
+  echo "Code interpreter is using insecure default MinIO credentials" >&2
+  exit 1
+fi
+
 log "Checking egress proxy image pin"
 egress_image="$(docker inspect egress-proxy --format '{{.Config.Image}}')"
 if [[ "${egress_image}" != *"@sha256:"* ]]; then
   echo "egress-proxy image is not digest-pinned: ${egress_image}" >&2
+  exit 1
+fi
+
+log "Checking RAG image source and pin"
+rag_image="$(docker inspect rag_api --format '{{.Config.Image}}')"
+if [[ "${rag_image}" != registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:* ]] || [[ "${rag_image}" != *"@sha256:"* ]]; then
+  echo "Unexpected rag_api image (expect registry.librechat.ai digest pin): ${rag_image}" >&2
+  exit 1
+fi
+
+log "Checking seccomp/apparmor posture"
+for container in \
+  LibreChat api-proxy egress-proxy sandpack-bundler rag_api chat-mongodb chat-meilisearch vectordb \
+  searxng searxng-auth-proxy searxng-valkey firecrawl-api firecrawl-playwright firecrawl-redis firecrawl-rabbitmq firecrawl-postgres \
+  jina-reranker code-interpreter-api code-interpreter-redis code-interpreter-minio; do
+  secopts="$(docker inspect "${container}" --format '{{json .HostConfig.SecurityOpt}}')"
+  if grep -q 'seccomp=unconfined' <<<"${secopts}"; then
+    echo "${container} has seccomp=unconfined" >&2
+    exit 1
+  fi
+  if [[ "${container}" != "code-interpreter-api" ]] && grep -q 'apparmor:unconfined' <<<"${secopts}"; then
+    echo "${container} unexpectedly has apparmor:unconfined" >&2
+    exit 1
+  fi
+done
+
+log "Checking code interpreter capability set"
+ci_cap_add="$(docker inspect code-interpreter-api --format '{{json .HostConfig.CapAdd}}')"
+if ! grep -Eq '^\["(CAP_)?SYS_ADMIN"\]$' <<<"${ci_cap_add}"; then
+  echo "Unexpected code-interpreter-api CapAdd: ${ci_cap_add}" >&2
   exit 1
 fi
 
@@ -210,11 +257,56 @@ EOF
 done
 
 log "Waiting for SearXNG and Jina reranker inside the stack"
-wait_internal_http "${SEARXNG_INSTANCE_URL:-http://searxng:8080/}"
 jina_health_url="$(
   docker exec -e NODE_OPTIONS= LibreChat node -e 'const u = new URL(process.env.JINA_API_URL); u.pathname = "/health"; u.search = ""; console.log(u.toString());'
 )"
 wait_internal_http "${jina_health_url}"
+
+log "Checking SearX auth proxy enforcement"
+searx_auth_ok=false
+for attempt in $(seq 1 30); do
+  set +e
+  searx_auth_result="$(
+    docker exec -i LibreChat node - <<'EOF' 2>&1
+const base = process.env.SEARXNG_INSTANCE_URL || 'http://searxng-auth:8080';
+const key = process.env.SEARXNG_API_KEY || '';
+const url = new URL('/search', base);
+url.searchParams.set('q', 'librechat');
+url.searchParams.set('format', 'json');
+
+async function call(withKey) {
+  const headers = withKey ? { 'X-API-Key': key } : {};
+  const res = await fetch(url, { headers });
+  return res.status;
+}
+
+(async () => {
+  const denied = await call(false);
+  const allowed = await call(true);
+  const ok = denied === 401 && allowed === 200;
+  console.log(JSON.stringify({ denied, allowed, ok }));
+  if (!ok) {
+    process.exit(1);
+  }
+})().catch((error) => {
+  console.error(error.stack || String(error));
+  process.exit(1);
+});
+EOF
+  )"
+  searx_auth_rc=$?
+  set -e
+  printf '%s\n' "${searx_auth_result}"
+  if [[ "${searx_auth_rc}" -eq 0 ]] && grep -q '"ok":true' <<<"${searx_auth_result}"; then
+    searx_auth_ok=true
+    break
+  fi
+  sleep 2
+done
+if [[ "${searx_auth_ok}" != true ]]; then
+  echo "SearX auth proxy enforcement check failed" >&2
+  exit 1
+fi
 
 log "Waiting for Firecrawl API inside the stack"
 wait_internal_http "${FIRECRAWL_API_URL:-http://firecrawl-api:3002}"

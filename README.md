@@ -68,6 +68,7 @@ exit
 The `api` and `rag_api` containers have no direct internet access. All their outbound HTTP(S) goes through an internal Squid proxy that only allows domains listed in `optional/egress-proxy/allowed_domains.txt`.
 The `sandpack` container is LAN-only (no WAN attachment); browser access on `http://127.0.0.1:80` is proxied through `api-proxy`.
 `api-proxy` stays dual-homed (`lan` + `wan`) because Docker host port publishing on this stack breaks when the proxy is attached only to an `internal: true` network.
+`rag_api` is pinned to an official digest (`registry.librechat.ai/...@sha256:...`) to avoid silent image drift.
 
 If an LLM prompt injection tries to exfiltrate data to an unknown host, Squid blocks it. Quick verification:
 
@@ -190,11 +191,13 @@ Search context is bounded by default (3 results, 2 scraped sources, 2 highlights
 <summary>Implementation notes</summary>
 
 - SearXNG config (`optional/local-search/searxng/settings.yml`): JSON output enabled (LibreChat requires it), noisy engines removed, timeout lowered to 4 s.
+- SearXNG requests from LibreChat now flow through `searxng-auth-proxy`, which enforces `X-API-Key` using `SEARXNG_API_KEY`. The raw SearXNG service is isolated on a private `searx_internal` network.
 - Rate limiting uses Valkey with a private-IP allowlist so LibreChat doesn't trip bot detection.
 - Firecrawl, its Redis, RabbitMQ, and Postgres sit on a dedicated `search` network. SearXNG + Firecrawl web-fetch traffic is routed through Squid on a dedicated `search_egress` subnet so requests are auditable in proxy logs.
 - The Jina compatibility patch makes `batch_size` optional — LibreChat's client omits it.
 - A mounted search patch caps scraped text, requests `markdown` + `onlyMainContent`, and strips raw `content` from the artifact returned to the model.
 - After editing files under `optional/local-search/jina/`, recreate the container to pick up changes.
+- Set a strong `SEARXNG_API_KEY` in `.env` (don’t leave placeholders) so internal search calls are authenticated.
 
 </details>
 

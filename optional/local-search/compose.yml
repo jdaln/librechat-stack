@@ -8,6 +8,8 @@ volumes:
 networks:
   search:
     internal: true
+  searx_internal:
+    internal: true
   search_egress:
     internal: true
     ipam:
@@ -29,7 +31,7 @@ services:
 
   api:
     depends_on:
-      searxng:
+      searxng-auth:
         condition: service_started
       firecrawl-api:
         condition: service_healthy
@@ -39,8 +41,10 @@ services:
       - lan
       - search
     environment:
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,jina-reranker,firecrawl-api
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,jina-reranker,firecrawl-api
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
+      SEARXNG_INSTANCE_URL: ${SEARXNG_INSTANCE_URL_INTERNAL:-http://searxng-auth:8080}
+      SEARXNG_API_KEY: ${SEARXNG_API_KEY:-change-me-searxng-api-key}
       LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-3}
       LIBRECHAT_WEB_SEARCH_MAX_SOURCES: ${LIBRECHAT_WEB_SEARCH_MAX_SOURCES:-2}
       LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT:-2}
@@ -73,13 +77,28 @@ services:
       - ./optional/local-search/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
       - searxng_data:/var/cache/searxng
     networks:
-      - search
+      - searx_internal
       - search_egress
-    ports:
-      - "127.0.0.1:${SEARXNG_PORT:-8080}:8080"
     depends_on:
       searxng-valkey:
         condition: service_healthy
+    logging: *json_logging
+
+  searxng-auth:
+    image: caddy:2.8-alpine
+    container_name: searxng-auth-proxy
+    restart: always
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    environment:
+      SEARXNG_API_KEY: ${SEARXNG_API_KEY:-change-me-searxng-api-key}
+    depends_on:
+      searxng:
+        condition: service_started
+    networks:
+      - search
+      - searx_internal
+    volumes:
+      - ./optional/local-search/searxng/auth-proxy.Caddyfile:/etc/caddy/Caddyfile:ro
     logging: *json_logging
 
   searxng-valkey:
@@ -90,7 +109,7 @@ services:
     volumes:
       - searxng_valkey_data:/data
     networks:
-      - search
+      - searx_internal
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 10s

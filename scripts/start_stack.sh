@@ -186,10 +186,14 @@ ensure_secret_permissions() {
   mkdir -p "${secrets_dir}"
 
   local mongo_root_user mongo_root_password mongo_app_user mongo_app_password
+  local code_minio_user code_minio_password searx_api_key
   mongo_root_user="$(read_env_var MONGO_ROOT_USER)"
   mongo_root_password="$(read_env_var MONGO_ROOT_PASSWORD)"
   mongo_app_user="$(read_env_var MONGO_APP_USER)"
   mongo_app_password="$(read_env_var MONGO_APP_PASSWORD)"
+  code_minio_user="$(read_env_var CODE_INTERPRETER_MINIO_ACCESS_KEY)"
+  code_minio_password="$(read_env_var CODE_INTERPRETER_MINIO_SECRET_KEY)"
+  searx_api_key="$(read_env_var SEARXNG_API_KEY)"
 
   if [[ -z "${mongo_root_user}" || -z "${mongo_root_password}" || -z "${mongo_app_user}" || -z "${mongo_app_password}" ]]; then
     echo "ERROR: missing one or more Mongo credentials in .env (MONGO_ROOT_USER, MONGO_ROOT_PASSWORD, MONGO_APP_USER, MONGO_APP_PASSWORD)" >&2
@@ -208,6 +212,18 @@ ensure_secret_permissions() {
 
   if [[ -f "${gcp_sa}" ]]; then
     chmod 600 "${gcp_sa}" || true
+  fi
+
+  if [[ "${ENABLE_CODE_INTERPRETER}" == "1" ]]; then
+    if [[ "${code_minio_user}" == "minioadmin" || "${code_minio_password}" == "minioadmin" ]]; then
+      log "WARNING: code interpreter MinIO credentials are using insecure defaults (minioadmin/minioadmin)"
+    fi
+  fi
+
+  if [[ "${ENABLE_LOCAL_SEARCH}" == "1" ]]; then
+    if [[ -z "${searx_api_key}" || "${searx_api_key}" == "24389_CHANGE_ME" || "${searx_api_key}" == "change-me-searxng-api-key" ]]; then
+      log "WARNING: SEARXNG_API_KEY is unset or placeholder; set a strong value in .env"
+    fi
   fi
 }
 

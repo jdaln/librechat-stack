@@ -83,6 +83,7 @@ jobs:
           CODE_INTERPRETER_SANDBOX_POOL_ENABLED=false
 
           SEARXNG_API_KEY=ci-searxng-api-key
+          SEARXNG_INSTANCE_URL_INTERNAL=http://searxng-auth:8080
           SEARXNG_INSTANCE_URL=http://searxng:8080
           SEARXNG_BASE_URL=http://searxng:8080/
           SEARXNG_SECRET=ci-searxng-secret

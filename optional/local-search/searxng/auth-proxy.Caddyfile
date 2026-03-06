@@ -1,0 +1,18 @@
+{
+  auto_https disable_redirects
+  log {
+    level WARN
+  }
+}
+
+:8080 {
+  @preflight method OPTIONS
+  respond @preflight 204
+
+  @authorized header X-API-Key {$SEARXNG_API_KEY}
+  handle @authorized {
+    reverse_proxy searxng:8080
+  }
+
+  respond "unauthorized" 401
+}
