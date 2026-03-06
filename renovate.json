@@ -1,21 +1,62 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": [
-    "config:recommended"
+    "config:recommended",
+    ":dependencyDashboard",
+    ":semanticCommits",
+    "mergeConfidence:all-badges",
+    "helpers:pinGitHubActionDigests"
   ],
   "onboarding": false,
   "requireConfig": "optional",
-  "baseBranchPatterns": [
+  "baseBranches": [
     "dev"
   ],
   "dependencyDashboard": true,
-  "timezone": "America/Los_Angeles",
+  "dependencyDashboardTitle": "Renovate Dashboard",
+  "timezone": "UTC",
+  "fetchChangeLogs": "pr",
+  "prBodyColumns": [
+    "Package",
+    "Type",
+    "Update",
+    "Change",
+    "Age",
+    "Adoption",
+    "Passing",
+    "Confidence"
+  ],
   "rebaseWhen": "behind-base-branch",
-  "prConcurrentLimit": 5,
+  "prConcurrentLimit": 8,
+  "prHourlyLimit": 2,
+  "separateMajorMinor": true,
+  "separateMultipleMajor": true,
+  "rollbackPrs": true,
+  "lockFileMaintenance": {
+    "enabled": false
+  },
+  "vulnerabilityAlerts": {
+    "labels": [
+      "dependencies",
+      "security"
+    ]
+  },
   "labels": [
-    "dependencies"
+    "dependencies",
+    "renovate"
   ],
   "packageRules": [
+    {
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "dependencyDashboardApproval": true,
+      "labels": [
+        "dependencies",
+        "renovate",
+        "major"
+      ]
+    },
     {
       "matchManagers": [
         "docker-compose",
@@ -28,6 +69,173 @@
         "github-actions"
       ],
       "groupName": "github actions"
+    },
+    {
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "git-refs"
+      ],
+      "groupName": "pinned git refs"
+    },
+    {
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchDatasources": [
+        "docker"
+      ],
+      "groupName": "template env image pins"
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Track CODE_INTERPRETER_GIT_REF in template_dot_env against main branch head",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "CODE_INTERPRETER_GIT_REF=(?<currentDigest>[a-f0-9]{40})"
+      ],
+      "currentValueTemplate": "main",
+      "depNameTemplate": "usnavy13/LibreCodeInterpreter",
+      "packageNameTemplate": "https://github.com/usnavy13/LibreCodeInterpreter",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "Track CODE_INTERPRETER_GIT_REF in prepare script against main branch head",
+      "fileMatch": [
+        "/^scripts\\/prepare_code_interpreter_image\\.sh$/"
+      ],
+      "matchStrings": [
+        "CODE_INTERPRETER_GIT_REF=\"\\$\\{CODE_INTERPRETER_GIT_REF:-(?<currentDigest>[a-f0-9]{40})\\}\""
+      ],
+      "currentValueTemplate": "main",
+      "depNameTemplate": "usnavy13/LibreCodeInterpreter",
+      "packageNameTemplate": "https://github.com/usnavy13/LibreCodeInterpreter",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "Track JINA_RERANKER_GIT_REF in template_dot_env against main branch head",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "JINA_RERANKER_GIT_REF=(?<currentDigest>[a-f0-9]{40})"
+      ],
+      "currentValueTemplate": "main",
+      "depNameTemplate": "freshe/librechat-jina-reranker-api",
+      "packageNameTemplate": "https://github.com/freshe/librechat-jina-reranker-api",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "Track JINA_RERANKER_GIT_REF in prepare script against main branch head",
+      "fileMatch": [
+        "/^scripts\\/prepare_jina_reranker_image\\.sh$/"
+      ],
+      "matchStrings": [
+        "JINA_RERANKER_GIT_REF=\"\\$\\{JINA_RERANKER_GIT_REF:-(?<currentDigest>[a-f0-9]{40})\\}\""
+      ],
+      "currentValueTemplate": "main",
+      "depNameTemplate": "freshe/librechat-jina-reranker-api",
+      "packageNameTemplate": "https://github.com/freshe/librechat-jina-reranker-api",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
+      "description": "Track SEARXNG_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "SEARXNG_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "searxng/searxng",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track SEARXNG_VALKEY_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "SEARXNG_VALKEY_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "valkey/valkey",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track FIRECRAWL_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "FIRECRAWL_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "ghcr.io/firecrawl/firecrawl",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track FIRECRAWL_PLAYWRIGHT_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "FIRECRAWL_PLAYWRIGHT_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "ghcr.io/firecrawl/playwright-service",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track FIRECRAWL_POSTGRES_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "FIRECRAWL_POSTGRES_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "ghcr.io/firecrawl/nuq-postgres",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track FIRECRAWL_REDIS_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "FIRECRAWL_REDIS_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "redis",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
+      "description": "Track FIRECRAWL_RABBITMQ_IMAGE in template_dot_env",
+      "fileMatch": [
+        "/^template_dot_env$/"
+      ],
+      "matchStrings": [
+        "FIRECRAWL_RABBITMQ_IMAGE=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "rabbitmq",
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
     }
   ]
 }

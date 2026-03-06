@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Validate Renovate Config On Dev Push
-        uses: renovatebot/github-action@v46.0.2
+        uses: renovatebot/github-action@e23f4d9675532445118c886434f5a34292b630b4 # v46.0.2
         with:
           configurationFile: renovate.json
           token: ${{ github.token }}
@@ -39,27 +39,30 @@ jobs:
       - name: Check Out
         uses: actions/checkout@v4
 
-      - name: Check For Renovate Token
-        id: token
+      - name: Select Renovate Auth Mode
+        id: auth
         shell: bash
         run: |
-          if [[ -n "${{ secrets.RENOVATE_TOKEN }}" ]]; then
-            echo "present=true" >> "$GITHUB_OUTPUT"
+          if [[ -n "$RENOVATE_TOKEN" ]]; then
+            echo "mode=RENOVATE_TOKEN" >> "$GITHUB_OUTPUT"
           else
-            echo "present=false" >> "$GITHUB_OUTPUT"
+            echo "mode=GITHUB_TOKEN" >> "$GITHUB_OUTPUT"
+          fi
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+
+      - name: Log Renovate Auth Mode
+        shell: bash
+        run: |
+          echo "Running Renovate with ${{ steps.auth.outputs.mode }}"
+          if [[ "${{ steps.auth.outputs.mode }}" == "GITHUB_TOKEN" ]]; then
+            echo "Note: GITHUB_TOKEN can be more limited than a PAT for workflow-updating PRs."
           fi
 
-      - name: Skip Without Renovate Token
-        if: steps.token.outputs.present != 'true'
-        shell: bash
-        run: |
-          echo "RENOVATE_TOKEN is not set. Skipping real Renovate run."
-
       - name: Run Renovate
-        if: steps.token.outputs.present == 'true'
-        uses: renovatebot/github-action@v46.0.2
+        uses: renovatebot/github-action@e23f4d9675532445118c886434f5a34292b630b4 # v46.0.2
         with:
           configurationFile: renovate.json
-          token: ${{ secrets.RENOVATE_TOKEN }}
+          token: ${{ secrets.RENOVATE_TOKEN || github.token }}
         env:
           RENOVATE_PLATFORM: github
