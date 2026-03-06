@@ -50,6 +50,8 @@ BUNDLER_PORT=31234
 
 # Master key for Meilisearch, the search engine used by LibreChat.
 MEILI_MASTER_KEY=24389_CHANGE_ME
+# Keep datastore logs concise by default.
+MEILI_LOG_LEVEL=WARN
 
 # JSON Web Token secrets for user authentication.
 # These must be kept private. Generate two different, strong keys.
@@ -129,6 +131,10 @@ PDF_EXTRACT_IMAGES=True
 # Keep this on the internal service address unless you intentionally change it.
 EGRESS_PROXY_URL=http://egress-proxy:3128
 
+# Docker json-file log rotation applied to all stack containers.
+DOCKER_LOG_MAX_SIZE=10m
+DOCKER_LOG_MAX_FILE=3
+
 # Internal hosts that should bypass proxying.
 NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy
 
@@ -155,7 +161,7 @@ CODE_INTERPRETER_IMAGE=librecodeinterpreter:0dc767a
 CODE_INTERPRETER_MINIO_ACCESS_KEY=minioadmin
 CODE_INTERPRETER_MINIO_SECRET_KEY=minioadmin
 CODE_INTERPRETER_MINIO_BUCKET=code-interpreter-files
-CODE_INTERPRETER_LOG_LEVEL=INFO
+CODE_INTERPRETER_LOG_LEVEL=WARNING
 CODE_INTERPRETER_REPL_ENABLED=false
 CODE_INTERPRETER_SANDBOX_POOL_ENABLED=false
 
@@ -178,6 +184,7 @@ SEARXNG_VALKEY_IMAGE=valkey/valkey:8-alpine
 FIRECRAWL_API_KEY=local-firecrawl
 FIRECRAWL_API_URL=http://firecrawl-api:3002
 FIRECRAWL_VERSION=v2
+FIRECRAWL_LOG_LEVEL=warn
 FIRECRAWL_BULL_AUTH_KEY=24389_CHANGE_ME
 FIRECRAWL_MAX_CONCURRENT_JOBS=2
 FIRECRAWL_NUM_WORKERS_PER_QUEUE=2
@@ -197,6 +204,7 @@ JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
 JINA_RERANKER_GIT_URL=https://github.com/freshe/librechat-jina-reranker-api.git
 JINA_RERANKER_GIT_REF=da638699215fc89814e623b3163f73dab859885c  # main
 JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
+JINA_RERANKER_LOG_LEVEL=WARNING
 JINA_RERANKER_MAX_BATCH_SIZE=2
 JINA_RERANKER_OMP_NUM_THREADS=1
 

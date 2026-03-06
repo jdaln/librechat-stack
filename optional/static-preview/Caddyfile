@@ -1,5 +1,8 @@
 {
   auto_https disable_redirects
+  log {
+    level WARN
+  }
 }
 
 :80 {

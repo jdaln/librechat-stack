@@ -6,7 +6,14 @@ from models import JinaRerankerResponse, JinaRerankerRequest
 import os
 import logging
 
+LOG_LEVEL = os.getenv("JINA_RERANKER_LOG_LEVEL", "WARNING").upper()
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.WARNING),
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
 logger = logging.getLogger(__name__)
+for uvicorn_logger in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+    logging.getLogger(uvicorn_logger).setLevel(getattr(logging, LOG_LEVEL, logging.WARNING))
 
 MODEL_NAME = os.getenv("MODEL_NAME", "jinaai/jina-reranker-v1-tiny-en")
 CACHE_DIR = os.getenv("CACHE_DIR", str(Path(__file__).parent.absolute() / ".cache"))
@@ -27,10 +34,12 @@ def rerank(request: JinaRerankerRequest = Body(...)):
         documents = request.documents
         batch_size = min(request.batch_size, MAX_BATCH_SIZE)
 
-        logger.info("## Query ##")
-        logger.info(query)
-        logger.info("## Document count ##")
-        logger.info(len(documents))
+        logger.debug(
+            "Received rerank request query_chars=%d documents=%d batch_size=%d",
+            len(query),
+            len(documents),
+            batch_size,
+        )
 
         data = encoder.rerank(query, documents, batch_size=batch_size)
         token_count = get_rough_token_count(query, documents)
@@ -48,12 +57,15 @@ def rerank(request: JinaRerankerRequest = Body(...)):
             ],
         }
 
-        logger.info("## Result ##")
-        logger.info(output_result)
+        logger.debug(
+            "Rerank completed results=%d total_tokens=%d",
+            len(output_result["results"]),
+            token_count,
+        )
 
         return output_result
     except Exception as e:
-        logger.error(str(e))
+        logger.exception("Rerank request failed: %s", e)
         raise HTTPException(status_code=500, detail="Error handling request")
 
 

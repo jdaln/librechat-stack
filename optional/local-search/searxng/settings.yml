@@ -7,6 +7,7 @@ use_default_settings:
 
 general:
   instance_name: "LibreChat Local Search"
+  debug: false
 
 search:
   safe_search: 1

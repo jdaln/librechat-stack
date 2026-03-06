@@ -1,3 +1,9 @@
+x-json-logging: &json_logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-3}"
+
 services:
   static_preview:
     build:
@@ -13,6 +19,7 @@ services:
       timeout: 5s
       retries: 5
       start_period: 40s
+    logging: *json_logging
 
   caddy:
     image: caddy:2.8-alpine
@@ -30,6 +37,7 @@ services:
       - source: caddyfile
         target: /etc/caddy/Caddyfile
     restart: always
+    logging: *json_logging
 
 secrets:
   caddyfile:

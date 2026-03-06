@@ -3,6 +3,12 @@ volumes:
   code_interpreter_redis_data: {}
   code_interpreter_minio_data: {}
 
+x-json-logging: &json_logging
+  driver: json-file
+  options:
+    max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
+    max-file: "${DOCKER_LOG_MAX_FILE:-3}"
+
 services:
   api:
     depends_on:
@@ -13,6 +19,7 @@ services:
       LIBRECHAT_CODE_API_KEY: ${LIBRECHAT_CODE_API_KEY:-local-code-interpreter-key-change-me}
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},code-interpreter-api,code-interpreter-redis,code-interpreter-minio
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},code-interpreter-api,code-interpreter-redis,code-interpreter-minio
+    logging: *json_logging
 
   code-interpreter-api:
     image: ${CODE_INTERPRETER_IMAGE:-librecodeinterpreter:31c1d5e}
@@ -43,7 +50,7 @@ services:
       MINIO_SECURE: "false"
       PORT: 8000
       ENABLE_HTTPS: "false"
-      LOG_LEVEL: ${CODE_INTERPRETER_LOG_LEVEL:-INFO}
+      LOG_LEVEL: ${CODE_INTERPRETER_LOG_LEVEL:-WARNING}
       REPL_ENABLED: ${CODE_INTERPRETER_REPL_ENABLED:-false}
       SANDBOX_POOL_ENABLED: ${CODE_INTERPRETER_SANDBOX_POOL_ENABLED:-false}
     volumes:
@@ -65,6 +72,7 @@ services:
       timeout: 15s
       retries: 5
       start_period: 60s
+    logging: *json_logging
 
   code-interpreter-redis:
     image: redis:7.4-alpine
@@ -75,6 +83,7 @@ services:
       --appendonly yes
       --appendfsync everysec
       --maxmemory 256mb
+      --loglevel warning
       --maxmemory-policy allkeys-lru
     volumes:
       - code_interpreter_redis_data:/data
@@ -85,6 +94,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *json_logging
 
   code-interpreter-minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
@@ -103,6 +113,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    logging: *json_logging
 
   code-interpreter-minio-init:
     image: minio/mc:RELEASE.2025-08-13T08-35-41Z
@@ -123,3 +134,4 @@ services:
       CODE_INTERPRETER_MINIO_BUCKET: ${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files}
     networks:
       - lan
+    logging: *json_logging

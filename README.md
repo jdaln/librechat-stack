@@ -236,13 +236,25 @@ colima list && docker context use colima-aiarm && ./scripts/start_stack.sh
 docker compose --env-file .env config | head -60
 ```
 
+**Reduce log volume further (or loosen it):**
+```bash
+# defaults in template_dot_env
+DOCKER_LOG_MAX_SIZE=10m
+DOCKER_LOG_MAX_FILE=3
+MEILI_LOG_LEVEL=WARN
+CODE_INTERPRETER_LOG_LEVEL=WARNING
+FIRECRAWL_LOG_LEVEL=warn
+JINA_RERANKER_LOG_LEVEL=WARNING
+```
+
 **Useful log commands:**
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 docker logs -f --tail=200 LibreChat
 docker logs -f --tail=200 egress-proxy
 
-# Squid decisions (TCP_TUNNEL/200 = allowed, TCP_DENIED/403 = blocked)
+# Squid logs denied destinations by default (allowed CONNECTs are suppressed).
+# Look for TCP_DENIED/403 when debugging allowlist misses.
 docker exec -u proxy egress-proxy sh -lc 'tail -f /var/log/squid/access.log'
 ```
 

@@ -44,6 +44,7 @@ jobs:
           BUNDLER_PORT=31234
 
           MEILI_MASTER_KEY=ci_meili_master_key
+          MEILI_LOG_LEVEL=WARN
           JWT_SECRET=ci_jwt_secret_1234567890
           JWT_REFRESH_SECRET=ci_jwt_refresh_secret_1234567890
 
@@ -66,6 +67,8 @@ jobs:
           OPENAI_TITLE_MODEL=big-pickle
 
           EGRESS_PROXY_URL=http://egress-proxy:3128
+          DOCKER_LOG_MAX_SIZE=10m
+          DOCKER_LOG_MAX_FILE=3
           NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api
 
           LIBRECHAT_CODE_BASEURL=http://code-interpreter-api:8000
@@ -75,7 +78,7 @@ jobs:
           CODE_INTERPRETER_MINIO_ACCESS_KEY=minioadmin
           CODE_INTERPRETER_MINIO_SECRET_KEY=minioadmin
           CODE_INTERPRETER_MINIO_BUCKET=code-interpreter-files
-          CODE_INTERPRETER_LOG_LEVEL=INFO
+          CODE_INTERPRETER_LOG_LEVEL=WARNING
           CODE_INTERPRETER_REPL_ENABLED=false
           CODE_INTERPRETER_SANDBOX_POOL_ENABLED=false
 
@@ -87,6 +90,7 @@ jobs:
           FIRECRAWL_API_KEY=ci-firecrawl
           FIRECRAWL_API_URL=http://firecrawl-api:3002
           FIRECRAWL_VERSION=v2
+          FIRECRAWL_LOG_LEVEL=warn
           FIRECRAWL_BULL_AUTH_KEY=ci-firecrawl-bull-auth
           FIRECRAWL_MAX_CONCURRENT_JOBS=2
           FIRECRAWL_NUM_WORKERS_PER_QUEUE=2
@@ -99,6 +103,7 @@ jobs:
           JINA_RERANKER_PORT=8787
           JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
           JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
+          JINA_RERANKER_LOG_LEVEL=WARNING
           JINA_RERANKER_MAX_BATCH_SIZE=2
           JINA_RERANKER_OMP_NUM_THREADS=1
 
