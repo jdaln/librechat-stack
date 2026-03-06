@@ -28,6 +28,14 @@ secrets:
     file: ./secrets/gcp-sa.json
   librechat_yaml:
     file: ./librechat.yaml
+  mongo_root_user:
+    file: ./secrets/runtime-mongo-root-user.txt
+  mongo_root_password:
+    file: ./secrets/runtime-mongo-root-password.txt
+  mongo_app_user:
+    file: ./secrets/runtime-mongo-app-user.txt
+  mongo_app_password:
+    file: ./secrets/runtime-mongo-app-password.txt
   squid_conf:
     file: ./optional/egress-proxy/squid.conf
   squid_allowlist:
@@ -174,12 +182,17 @@ services:
     image: mongo:8.2-noble
     container_name: chat-mongodb
     environment:
-      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USER}
-      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
+      MONGO_INITDB_ROOT_USERNAME_FILE: /run/secrets/mongo_root_user
+      MONGO_INITDB_ROOT_PASSWORD_FILE: /run/secrets/mongo_root_password
       MONGO_INITDB_DATABASE: LibreChat   # creates the DB at init time
     command: ["mongod", "--auth", "--bind_ip_all", "--quiet"]
     volumes:
       - mongo_data:/data/db
+    secrets:
+      - source: mongo_root_user
+        target: mongo_root_user
+      - source: mongo_root_password
+        target: mongo_root_password
     networks: [lan]
     restart: always
     logging: *json_logging
@@ -206,24 +219,32 @@ services:
     networks: [lan]
     restart: "no"
     logging: *json_logging
-    environment:
-      MONGO_ROOT_USER: ${MONGO_ROOT_USER}
-      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
-      MONGO_APP_USER: ${MONGO_APP_USER}
-      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+    secrets:
+      - source: mongo_root_user
+        target: mongo_root_user
+      - source: mongo_root_password
+        target: mongo_root_password
+      - source: mongo_app_user
+        target: mongo_app_user
+      - source: mongo_app_password
+        target: mongo_app_password
     command:
       - /bin/sh
       - -lc
       - |
+        ROOT_USER="$(cat /run/secrets/mongo_root_user)"
+        ROOT_PASSWORD="$(cat /run/secrets/mongo_root_password)"
+        APP_USER="$(cat /run/secrets/mongo_app_user)"
+        APP_PASSWORD="$(cat /run/secrets/mongo_app_password)"
         for i in $(seq 1 30); do
-          if mongosh "mongodb://mongodb:27017/admin" --eval "
-            const rootUser = process.env.MONGO_ROOT_USER;
-            const rootPass = process.env.MONGO_ROOT_PASSWORD;
+          if ROOT_USER="$${ROOT_USER}" ROOT_PASSWORD="$${ROOT_PASSWORD}" APP_USER="$${APP_USER}" APP_PASSWORD="$${APP_PASSWORD}" mongosh "mongodb://mongodb:27017/admin" --eval "
+            const rootUser = process.env.ROOT_USER;
+            const rootPass = process.env.ROOT_PASSWORD;
             if (!db.auth(rootUser, rootPass)) {
               throw new Error('mongo-init auth failed');
             }
-            const u = process.env.MONGO_APP_USER;
-            const p = process.env.MONGO_APP_PASSWORD;
+            const u = process.env.APP_USER;
+            const p = process.env.APP_PASSWORD;
             const dbName = 'LibreChat';
             const d = db.getSiblingDB(dbName);
             if (!d.getUser(u)) {

@@ -169,7 +169,43 @@ compose_up() {
 }
 
 ensure_secret_permissions() {
+  if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
+    echo "ERROR: ${PROJECT_ROOT}/.env not found. Run: cp template_dot_env .env" >&2
+    exit 1
+  fi
+
+  local -r secrets_dir="${PROJECT_ROOT}/secrets"
   local gcp_sa="${PROJECT_ROOT}/secrets/gcp-sa.json"
+  local env_file="${PROJECT_ROOT}/.env"
+
+  read_env_var() {
+    local key="$1"
+    awk -F= -v k="${key}" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "${env_file}"
+  }
+
+  mkdir -p "${secrets_dir}"
+
+  local mongo_root_user mongo_root_password mongo_app_user mongo_app_password
+  mongo_root_user="$(read_env_var MONGO_ROOT_USER)"
+  mongo_root_password="$(read_env_var MONGO_ROOT_PASSWORD)"
+  mongo_app_user="$(read_env_var MONGO_APP_USER)"
+  mongo_app_password="$(read_env_var MONGO_APP_PASSWORD)"
+
+  if [[ -z "${mongo_root_user}" || -z "${mongo_root_password}" || -z "${mongo_app_user}" || -z "${mongo_app_password}" ]]; then
+    echo "ERROR: missing one or more Mongo credentials in .env (MONGO_ROOT_USER, MONGO_ROOT_PASSWORD, MONGO_APP_USER, MONGO_APP_PASSWORD)" >&2
+    exit 1
+  fi
+
+  printf '%s' "${mongo_root_user}" > "${secrets_dir}/runtime-mongo-root-user.txt"
+  printf '%s' "${mongo_root_password}" > "${secrets_dir}/runtime-mongo-root-password.txt"
+  printf '%s' "${mongo_app_user}" > "${secrets_dir}/runtime-mongo-app-user.txt"
+  printf '%s' "${mongo_app_password}" > "${secrets_dir}/runtime-mongo-app-password.txt"
+
+  chmod 600 "${secrets_dir}/runtime-mongo-root-user.txt" \
+            "${secrets_dir}/runtime-mongo-root-password.txt" \
+            "${secrets_dir}/runtime-mongo-app-user.txt" \
+            "${secrets_dir}/runtime-mongo-app-password.txt" || true
+
   if [[ -f "${gcp_sa}" ]]; then
     chmod 600 "${gcp_sa}" || true
   fi

@@ -2,6 +2,7 @@
 secrets/*.json
 secrets/*.crt
 secrets/*.key
+secrets/runtime-*.txt
 *.log
 ci_artifacts/
 .DS_Store

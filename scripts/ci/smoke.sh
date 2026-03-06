@@ -14,6 +14,31 @@ compose_files=(
   -f optional/local-search/compose.yml
 )
 
+prepare_runtime_secrets() {
+  local env_file="${ROOT_DIR}/.env"
+  local secrets_dir="${ROOT_DIR}/secrets"
+
+  if [[ ! -f "${env_file}" ]]; then
+    echo "Missing ${env_file}" >&2
+    exit 1
+  fi
+
+  read_env_var() {
+    local key="$1"
+    awk -F= -v k="${key}" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "${env_file}"
+  }
+
+  mkdir -p "${secrets_dir}"
+  printf '%s' "$(read_env_var MONGO_ROOT_USER)" > "${secrets_dir}/runtime-mongo-root-user.txt"
+  printf '%s' "$(read_env_var MONGO_ROOT_PASSWORD)" > "${secrets_dir}/runtime-mongo-root-password.txt"
+  printf '%s' "$(read_env_var MONGO_APP_USER)" > "${secrets_dir}/runtime-mongo-app-user.txt"
+  printf '%s' "$(read_env_var MONGO_APP_PASSWORD)" > "${secrets_dir}/runtime-mongo-app-password.txt"
+  chmod 600 "${secrets_dir}/runtime-mongo-root-user.txt" \
+            "${secrets_dir}/runtime-mongo-root-password.txt" \
+            "${secrets_dir}/runtime-mongo-app-user.txt" \
+            "${secrets_dir}/runtime-mongo-app-password.txt" || true
+}
+
 compose() {
   if docker compose version >/dev/null 2>&1; then
     docker compose "$@"
@@ -94,6 +119,7 @@ cleanup() {
 trap 'cleanup $?' EXIT
 
 log "Validating compose configuration"
+prepare_runtime_secrets
 compose \
   --env-file .env \
   "${compose_files[@]}" \
@@ -116,6 +142,36 @@ compose \
 
 log "Waiting for LibreChat ingress"
 wait_http "${INGRESS_URL}/login"
+
+log "Checking ingress exposure model"
+if docker port LibreChat 3080 >/dev/null 2>&1; then
+  echo "LibreChat container unexpectedly exposes host port 3080" >&2
+  exit 1
+fi
+
+log "Checking Mongo credential handling"
+mongo_env="$(docker inspect chat-mongodb --format '{{json .Config.Env}}')"
+if ! grep -q 'MONGO_INITDB_ROOT_USERNAME_FILE=' <<<"${mongo_env}"; then
+  echo "MongoDB is missing *_FILE root credential env vars" >&2
+  exit 1
+fi
+if grep -q 'MONGO_INITDB_ROOT_USERNAME=' <<<"${mongo_env}" || grep -q 'MONGO_INITDB_ROOT_PASSWORD=' <<<"${mongo_env}"; then
+  echo "MongoDB still has plaintext root credential env vars" >&2
+  exit 1
+fi
+
+mongo_init_env="$(docker inspect mongo-init --format '{{json .Config.Env}}')"
+if grep -q 'MONGO_ROOT_PASSWORD=' <<<"${mongo_init_env}" || grep -q 'MONGO_APP_PASSWORD=' <<<"${mongo_init_env}"; then
+  echo "mongo-init still has plaintext credential env vars" >&2
+  exit 1
+fi
+
+log "Checking egress proxy image pin"
+egress_image="$(docker inspect egress-proxy --format '{{.Config.Image}}')"
+if [[ "${egress_image}" != *"@sha256:"* ]]; then
+  echo "egress-proxy image is not digest-pinned: ${egress_image}" >&2
+  exit 1
+fi
 
 log "Waiting for code interpreter health endpoint inside the stack"
 for attempt in $(seq 1 60); do

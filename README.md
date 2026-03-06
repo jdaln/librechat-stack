@@ -28,7 +28,7 @@ $EDITOR .env              # set API keys, secrets, etc.
 ./scripts/start_stack.sh  # handles context switch + compose up
 ```
 
-The helper script starts Colima if needed, switches Docker context, enforces `secrets/gcp-sa.json` file mode `600` when present, and runs `docker compose up -d`. To start manually instead:
+The helper script starts Colima if needed, switches Docker context, enforces secret file modes, generates runtime Mongo secret files under `secrets/runtime-*.txt`, and runs `docker compose up -d`. To start manually instead:
 
 ```bash
 docker context use colima-aiarm
@@ -240,6 +240,12 @@ colima list && docker context use colima-aiarm && ./scripts/start_stack.sh
 **Env warnings in compose config?**
 ```bash
 docker compose --env-file .env config | head -60
+```
+
+**Compose says `secrets/runtime-mongo-*.txt` missing?**
+```bash
+# Regenerate runtime secret files from .env and start stack
+./scripts/start_stack.sh
 ```
 
 **Can’t reach `http://localhost:3080`?**
