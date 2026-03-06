@@ -38,6 +38,7 @@ endpoints:
   agents:
     allowedProviders:
       - openAI
+      - google
       - OpenRouter
     capabilities:
       - tools
@@ -65,6 +66,15 @@ modelSpecs:
   enforce: false
   prioritize: false
   list:
+    - name: "google-gemini-2-5-pro"
+      label: "Gemini 2.5 Pro (Vertex)"
+      default: false
+      description: "Google Vertex AI preset (requires ENDPOINTS to include google)."
+      preset:
+        endpoint: "google"
+        model: "gemini-2.5-pro"
+        temperature: 0.2
+        greeting: "Gemini 2.5 Pro preset is active via Vertex AI.\n"
     - name: "openrouter-trinity-large-free"
       label: "Trinity Large Free (OpenRouter)"
       default: false

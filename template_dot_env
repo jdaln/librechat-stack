@@ -90,8 +90,10 @@ GOOGLE_APPLICATION_CREDENTIALS=/run/secrets/gcp_sa
 GOOGLE_SERVICE_KEY_FILE=/run/secrets/gcp_sa
 
 # Comma-separated list of available Google AI models to use in LibreChat.
-GOOGLE_MODELS=gemini-1.5-pro,gemini-1.5-flash,gemini-1.5-flash-tool-use
+# Vertex supports Gemini 2.5 generally and Gemini 3 in preview on EU endpoints.
+GOOGLE_MODELS=gemini-2.5-pro,gemini-2.5-flash,gemini-2.5-flash-lite,gemini-3-pro-preview,gemini-3-flash-preview
 # The Google Cloud region where the AI models will be accessed.
+# Keep this in a supported EU region (for example: europe-west1, europe-west4, europe-north1).
 GOOGLE_LOC=europe-north1
 
 # ------------------------------------------------------------------------------
