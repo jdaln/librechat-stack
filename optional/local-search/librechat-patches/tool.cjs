@@ -1,4 +1,6 @@
 'use strict';
+// Local patch derived from LibreChat upstream web-search tool module (MIT).
+// This overlay trims search artifacts/snippets/highlights before model handoff.
 
 var zod = require('zod');
 var tools = require('@langchain/core/tools');

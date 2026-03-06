@@ -1,4 +1,6 @@
 'use strict';
+// Local patch derived from LibreChat upstream search tool module (MIT).
+// This overlay adds conservative source-content truncation to control prompt context growth.
 
 var axios = require('axios');
 var textsplitters = require('@langchain/textsplitters');
