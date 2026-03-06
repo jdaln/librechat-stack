@@ -66,6 +66,7 @@ exit
 ## How Egress Hardening Works
 
 The `api` and `rag_api` containers have no direct internet access. All their outbound HTTP(S) goes through an internal Squid proxy that only allows domains listed in `optional/egress-proxy/allowed_domains.txt`.
+The `sandpack` container is LAN-only (no WAN attachment); browser access on `http://127.0.0.1:80` is proxied through `api-proxy`.
 
 If an LLM prompt injection tries to exfiltrate data to an unknown host, Squid blocks it. Quick verification:
 
@@ -208,6 +209,7 @@ ENABLE_STATIC_PREVIEW=1 ./scripts/start_stack.sh
 
 Preview is at `http://127.0.0.1:4324`.
 Set `SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324` in `.env` so relay hostnames like `id-preview.localhost` resolve correctly and keep Service Worker support on HTTP.
+The dynamic Sandpack bundler URL remains `http://127.0.0.1:80`, but that ingress is now provided by `api-proxy` (the `sandpack` container is no longer host-published directly).
 
 > **LAN note:** defaults are localhost-only. If you expose to your network, also update `DOMAIN_CLIENT`, `DOMAIN_SERVER`, and CORS origins.
 

@@ -148,6 +148,23 @@ if docker port LibreChat 3080 >/dev/null 2>&1; then
   echo "LibreChat container unexpectedly exposes host port 3080" >&2
   exit 1
 fi
+if ! docker port api-proxy 80/tcp | grep -q '127.0.0.1:3081'; then
+  echo "api-proxy is missing host bind 127.0.0.1:3081->80" >&2
+  exit 1
+fi
+if ! docker port api-proxy 81/tcp | grep -q '127.0.0.1:80'; then
+  echo "api-proxy is missing host bind 127.0.0.1:80->81 for sandpack ingress" >&2
+  exit 1
+fi
+if docker port sandpack-bundler 80/tcp >/dev/null 2>&1; then
+  echo "sandpack-bundler should not expose host port 80 directly" >&2
+  exit 1
+fi
+sandpack_networks="$(docker inspect sandpack-bundler --format '{{json .NetworkSettings.Networks}}')"
+if grep -q '"librechat-stack_wan"' <<<"${sandpack_networks}"; then
+  echo "sandpack-bundler should not be attached to librechat-stack_wan" >&2
+  exit 1
+fi
 
 log "Checking Mongo credential handling"
 mongo_env="$(docker inspect chat-mongodb --format '{{json .Config.Env}}')"

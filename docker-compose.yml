@@ -12,7 +12,7 @@
 #   docker compose -f docker-compose.yml -f compose.hardening.yml up -d
 #   # Discover chosen host ports (dynamic publishing):
 #   docker compose port api ${PORT:-3080}
-#   docker compose port sandpack 80
+#   docker compose port api-proxy 81
 
 name: librechat-stack
 
@@ -28,6 +28,8 @@ secrets:
     file: ./secrets/gcp-sa.json
   librechat_yaml:
     file: ./librechat.yaml
+  api_proxy_caddyfile:
+    file: ./optional/api-proxy/Caddyfile
   mongo_root_user:
     file: ./secrets/runtime-mongo-root-user.txt
   mongo_root_password:
@@ -86,12 +88,18 @@ services:
     depends_on:
       api:
         condition: service_started
-    command: ["caddy", "reverse-proxy", "--from", ":80", "--to", "api:3080"]
+      sandpack:
+        condition: service_healthy
+    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
     ports:
       - "127.0.0.1:3081:80"
+      - "127.0.0.1:80:81"
     networks:
       - lan
       - wan
+    secrets:
+      - source: api_proxy_caddyfile
+        target: /etc/caddy/Caddyfile
     restart: always
     logging: *json_logging
 
@@ -155,7 +163,7 @@ services:
     # platform: linux/amd64
 
   # ──────────────────────────────────────────────────────────────────────────────
-  # Sandpack bundler (needs internet + local access from macOS)
+  # Sandpack bundler (internal only; host ingress is proxied via api-proxy)
   # ──────────────────────────────────────────────────────────────────────────────
   sandpack:
     image: ghcr.io/librechat-ai/codesandbox-client/bundler:20251101
@@ -168,9 +176,6 @@ services:
       start_period: 40s
     networks:
       - lan
-      - wan
-    ports:
-      - "127.0.0.1:80:80"
     restart: always
     logging: *json_logging
     # platform: linux/amd64  # uncomment only if needed on M1

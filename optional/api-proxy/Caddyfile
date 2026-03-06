@@ -1,0 +1,28 @@
+{
+  auto_https disable_redirects
+  log {
+    level WARN
+  }
+}
+
+# Main LibreChat ingress.
+:80 {
+  reverse_proxy api:3080
+}
+
+# Sandpack bundler ingress (mapped from host 127.0.0.1:80).
+:81 {
+  header {
+    Access-Control-Allow-Origin  "*"
+    Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Headers "*"
+    Access-Control-Max-Age       "3600"
+  }
+
+  @options {
+    method OPTIONS
+  }
+  respond @options 204
+
+  reverse_proxy sandpack:80
+}
