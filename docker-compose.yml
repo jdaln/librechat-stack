@@ -112,18 +112,19 @@ services:
       MEILI_HOST: http://meilisearch:7700
       RAG_PORT: ${RAG_PORT:-8000}
       RAG_API_URL: http://rag_api:${RAG_PORT:-8000}
-      # IMPORTANT: talk to the bundler by SERVICE NAME on the internal network
-      # (Do NOT use host.docker.internal)
-      SANDPACK_BUNDLER_URL: http://sandpack:80
-      # Optional static preview service (see optional/static-preview/compose.yml).
-      # Defaults to localhost HTTP so no local certificate import is required.
-      SANDPACK_STATIC_BUNDLER_URL: ${SANDPACK_STATIC_BUNDLER_URL:-http://127.0.0.1:4324}
+      # Browser-facing Sandpack URLs returned by /api/config.
+      # Keep these on localhost-reachable hosts/ports (not internal Docker DNS names).
+      SANDPACK_BUNDLER_URL: ${SANDPACK_BUNDLER_URL:-http://127.0.0.1:80}
+      # Static preview uses id-prefixed hostnames (id-<host>). Use a *.localhost
+      # host so id-prefixed variants resolve on loopback and stay SW-secure on HTTP.
+      SANDPACK_STATIC_BUNDLER_URL: ${SANDPACK_STATIC_BUNDLER_URL:-http://preview.localhost:4324}
       EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       NODE_OPTIONS: --require /app/proxy-bootstrap.cjs
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
       CONFIG_PATH: /run/secrets/librechat_yaml
@@ -133,6 +134,7 @@ services:
       - lbc_api_images:/app/client/public/images:ro
       - lbc_api_uploads:/app/uploads
       - lbc_app_data:/app/data
+      - ./optional/librechat/registerSW.noop.js:/app/client/dist/registerSW.js:ro
       - ./optional/egress-proxy/undici-proxy-bootstrap.cjs:/app/proxy-bootstrap.cjs:ro
     ports:
       - "127.0.0.1:3080:3080"
@@ -289,6 +291,8 @@ services:
       RAG_HOST: 0.0.0.0
       DB_HOST: vectordb
       RAG_PORT: ${RAG_PORT:-8000}
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
       EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}

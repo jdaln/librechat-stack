@@ -43,6 +43,8 @@ services:
       API_KEY: ${LIBRECHAT_CODE_API_KEY:-local-code-interpreter-key-change-me}
       REDIS_HOST: code-interpreter-redis
       REDIS_PORT: 6379
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
       MINIO_ENDPOINT: code-interpreter-minio:9000
       MINIO_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:-minioadmin}

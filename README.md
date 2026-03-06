@@ -84,6 +84,8 @@ const test=(h)=>new Promise(r=>{\
 
 Edit the allowlist and restart the proxy to change which domains are permitted.
 
+When the local-search overlay is enabled, SearXNG/Firecrawl egress is intentionally routed through Squid with full access logging so outbound search fetches are auditable.
+
 ---
 
 ## Model Presets
@@ -184,7 +186,7 @@ Search context is bounded by default (3 results, 2 scraped sources, 2 highlights
 
 - SearXNG config (`optional/local-search/searxng/settings.yml`): JSON output enabled (LibreChat requires it), noisy engines removed, timeout lowered to 4 s.
 - Rate limiting uses Valkey with a private-IP allowlist so LibreChat doesn't trip bot detection.
-- Firecrawl, its Redis, RabbitMQ, and Postgres sit on a dedicated `search` network. Only SearXNG, the Firecrawl API, and Playwright get WAN access (they need it to fetch pages).
+- Firecrawl, its Redis, RabbitMQ, and Postgres sit on a dedicated `search` network. SearXNG + Firecrawl web-fetch traffic is routed through Squid on a dedicated `search_egress` subnet so requests are auditable in proxy logs.
 - The Jina compatibility patch makes `batch_size` optional — LibreChat's client omits it.
 - A mounted search patch caps scraped text, requests `markdown` + `onlyMainContent`, and strips raw `content` from the artifact returned to the model.
 - After editing files under `optional/local-search/jina/`, recreate the container to pick up changes.
@@ -201,7 +203,8 @@ Local sandpack static bundler for artifact previews. Plain HTTP — no TLS setup
 ENABLE_STATIC_PREVIEW=1 ./scripts/start_stack.sh
 ```
 
-Preview is at `http://127.0.0.1:4324`. Override with `SANDPACK_STATIC_BUNDLER_URL` in `.env` if needed.
+Preview is at `http://127.0.0.1:4324`.
+Set `SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324` in `.env` so relay hostnames like `id-preview.localhost` resolve correctly and keep Service Worker support on HTTP.
 
 > **LAN note:** defaults are localhost-only. If you expose to your network, also update `DOMAIN_CLIENT`, `DOMAIN_SERVER`, and CORS origins.
 
@@ -236,6 +239,15 @@ colima list && docker context use colima-aiarm && ./scripts/start_stack.sh
 docker compose --env-file .env config | head -60
 ```
 
+**Artifact preview is blank / `non-precached-url` in console?**
+```bash
+# Stack now disables LibreChat's bundled service worker by default.
+# Do one-time cleanup in browser: clear site data for localhost and reload.
+# Also verify:
+#   SANDPACK_BUNDLER_URL=http://127.0.0.1:80
+#   SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324
+```
+
 **Reduce log volume further (or loosen it):**
 ```bash
 # defaults in template_dot_env
@@ -245,6 +257,9 @@ MEILI_LOG_LEVEL=WARN
 CODE_INTERPRETER_LOG_LEVEL=WARNING
 FIRECRAWL_LOG_LEVEL=warn
 JINA_RERANKER_LOG_LEVEL=WARNING
+DO_NOT_TRACK=1
+FIRECRAWL_NO_TELEMETRY=1
+HF_HUB_DISABLE_TELEMETRY=1
 ```
 
 **Useful log commands:**
@@ -253,7 +268,7 @@ docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 docker logs -f --tail=200 LibreChat
 docker logs -f --tail=200 egress-proxy
 
-# Squid logs denied destinations by default (allowed CONNECTs are suppressed).
+# Squid logs all local-search egress (auditable) plus denied requests elsewhere.
 # Look for TCP_DENIED/403 when debugging allowlist misses.
 docker exec -u proxy egress-proxy sh -lc 'tail -f /var/log/squid/access.log'
 ```

@@ -8,6 +8,8 @@ use_default_settings:
 general:
   instance_name: "LibreChat Local Search"
   debug: false
+  enable_metrics: false
+  open_metrics: ""
 
 search:
   safe_search: 1
@@ -17,6 +19,9 @@ search:
 
 outgoing:
   request_timeout: 4.0
+  proxies:
+    all://:
+      - http://egress-proxy:3128
 
 server:
   base_url: http://searxng:8080/

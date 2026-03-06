@@ -8,6 +8,11 @@ volumes:
 networks:
   search:
     internal: true
+  search_egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.240.0/24
 
 x-json-logging: &json_logging
   driver: json-file
@@ -16,6 +21,12 @@ x-json-logging: &json_logging
     max-file: "${DOCKER_LOG_MAX_FILE:-3}"
 
 services:
+  egress-proxy:
+    networks:
+      - lan
+      - wan
+      - search_egress
+
   api:
     depends_on:
       searxng:
@@ -51,13 +62,19 @@ services:
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080/}
       SEARXNG_LIMITER: "true"
       SEARXNG_SECRET: ${SEARXNG_SECRET:-change-me-search-secret}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,searxng-valkey
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,searxng-valkey
     volumes:
       - ./optional/local-search/searxng/settings.yml:/etc/searxng/settings.yml:ro
       - ./optional/local-search/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
       - searxng_data:/var/cache/searxng
     networks:
       - search
-      - wan
+      - search_egress
     ports:
       - "127.0.0.1:${SEARXNG_PORT:-8080}:8080"
     depends_on:
@@ -91,8 +108,14 @@ services:
       PORT: 3002
       ENV: local
       LOGGING_LEVEL: ${FIRECRAWL_LOG_LEVEL:-warn}
-      FIRECRAWL_NO_TELEMETRY: 1
-      DO_NOT_TRACK: 1
+      FIRECRAWL_NO_TELEMETRY: ${FIRECRAWL_NO_TELEMETRY:-1}
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,searxng,searxng-valkey
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,searxng,searxng-valkey
       REDIS_URL: redis://firecrawl-redis:6379
       REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
       NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
@@ -110,7 +133,7 @@ services:
       EXTRACT_WORKER_PORT: 3004
       WORKER_PORT: 3005
       USE_DB_AUTHENTICATION: "false"
-      PROXY_SERVER: ""
+      PROXY_SERVER: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       PROXY_USERNAME: ""
       PROXY_PASSWORD: ""
       OPENAI_API_KEY: ""
@@ -138,7 +161,7 @@ services:
         condition: service_healthy
     networks:
       - search
-      - wan
+      - search_egress
     healthcheck:
       test:
         [
@@ -158,15 +181,21 @@ services:
     environment:
       PORT: 3000
       MAX_CONCURRENT_PAGES: ${FIRECRAWL_MAX_CONCURRENT_PAGES:-4}
-      FIRECRAWL_NO_TELEMETRY: 1
-      DO_NOT_TRACK: 1
+      FIRECRAWL_NO_TELEMETRY: ${FIRECRAWL_NO_TELEMETRY:-1}
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
+      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},firecrawl-api,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,searxng,searxng-valkey
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},firecrawl-api,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,searxng,searxng-valkey
       BLOCK_MEDIA: ${FIRECRAWL_BLOCK_MEDIA:-}
-      PROXY_SERVER: ""
+      PROXY_SERVER: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       PROXY_USERNAME: ""
       PROXY_PASSWORD: ""
     networks:
       - search
-      - wan
+      - search_egress
     healthcheck:
       test:
         [
@@ -239,6 +268,8 @@ services:
       MODEL_NAME: ${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v1-tiny-en}
       CACHE_DIR: /app/.cache
       TOKENIZERS_PARALLELISM: "false"
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
       OMP_NUM_THREADS: ${JINA_RERANKER_OMP_NUM_THREADS:-1}
       JINA_RERANKER_MAX_BATCH_SIZE: ${JINA_RERANKER_MAX_BATCH_SIZE:-2}
       JINA_RERANKER_LOG_LEVEL: ${JINA_RERANKER_LOG_LEVEL:-WARNING}
