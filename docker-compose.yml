@@ -184,12 +184,12 @@ services:
     restart: always
     logging: *json_logging
     healthcheck:
-      # Try unauthenticated ping (works during first-boot init),
-      # else try authenticated ping once auth is active.
+      # Connection-level readiness check only; avoids embedding credentials
+      # in the healthcheck command.
       test:
         [
           "CMD-SHELL",
-          "mongosh --quiet --eval \"db.adminCommand({ ping: 1 }).ok\" 127.0.0.1:27017/admin | grep -q 1 || mongosh --quiet \"mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@127.0.0.1:27017/admin?authSource=admin\" --eval \"db.adminCommand({ ping: 1 }).ok\" | grep -q 1"
+          "mongosh --quiet 127.0.0.1:27017/admin --eval \"quit(0)\" >/dev/null 2>&1"
         ]
       interval: 10s
       timeout: 5s
@@ -216,7 +216,12 @@ services:
       - -lc
       - |
         for i in $(seq 1 30); do
-          if mongosh "mongodb://${MONGO_ROOT_USER}:${MONGO_ROOT_PASSWORD}@mongodb:27017/admin?authSource=admin" --eval "
+          if mongosh "mongodb://mongodb:27017/admin" --eval "
+            const rootUser = process.env.MONGO_ROOT_USER;
+            const rootPass = process.env.MONGO_ROOT_PASSWORD;
+            if (!db.auth(rootUser, rootPass)) {
+              throw new Error('mongo-init auth failed');
+            }
             const u = process.env.MONGO_APP_USER;
             const p = process.env.MONGO_APP_PASSWORD;
             const dbName = 'LibreChat';
