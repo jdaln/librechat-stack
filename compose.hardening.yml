@@ -78,6 +78,7 @@ services:
     # (MONGO_INITDB_*_FILE) before dropping privileges.
     cap_add:
       - CHOWN
+      - DAC_OVERRIDE
       - SETGID
       - SETUID
 
