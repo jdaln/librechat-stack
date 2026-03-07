@@ -307,4 +307,7 @@ Compose foundation adapted from [nicedexter](https://github.com/nicedexter).
 
 ## TODO
 
-- You tell me
+- Remaining known constraints (accepted for now):
+  - `code-interpreter-api` still needs `SYS_ADMIN` + `apparmor:unconfined` for current nsjail runtime.
+  - `api-proxy` remains dual-homed (`lan` + `wan`) because host port publishing fails when attached only to internal networks in this Docker/Colima setup.
+  - Search egress is intentionally auditable-not-allowlisted (to preserve SearX/Firecrawl web fetch behavior).

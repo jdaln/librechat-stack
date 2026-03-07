@@ -164,6 +164,20 @@ if ! docker port api-proxy 81/tcp | grep -q '127.0.0.1:80'; then
   echo "api-proxy is missing host bind 127.0.0.1:80->81 for sandpack ingress" >&2
   exit 1
 fi
+api_proxy_compose_block="$(
+  compose \
+    --env-file .env \
+    "${compose_files[@]}" \
+    config | awk '
+      /^  api-proxy:$/ { in_block=1; print; next }
+      /^  [^ ]/ && in_block { exit }
+      in_block { print }
+    '
+)"
+if grep -q '^    environment:' <<<"${api_proxy_compose_block}"; then
+  echo "api-proxy should not have explicit environment proxy wiring in compose config" >&2
+  exit 1
+fi
 if docker port sandpack-bundler 80/tcp >/dev/null 2>&1; then
   echo "sandpack-bundler should not expose host port 80 directly" >&2
   exit 1

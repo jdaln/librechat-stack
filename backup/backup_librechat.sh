@@ -58,8 +58,10 @@ backup_volume() {
 }
 
 prune_old() {
+  local prune_dir="$BACKUP_ROOT/volumes"
+  mkdir -p "$prune_dir"
   log "Pruning backups older than ${RETENTION_DAYS} days in $BACKUP_ROOT"
-  find "$BACKUP_ROOT/volumes" -type f -name '*.tar.gz' -mtime +"$RETENTION_DAYS" -print -delete || true
+  find "$prune_dir" -type f -name '*.tar.gz' -mtime +"$RETENTION_DAYS" -print -delete || true
 }
 
 main() {
