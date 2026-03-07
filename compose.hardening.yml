@@ -74,7 +74,12 @@ services:
     <<: *harden
     mem_limit: "2g"
     cpus: "1.5"
-    user: "999:999"          # run as mongodb user
+    # Keep default image user so entrypoint can read root-owned Docker secrets
+    # (MONGO_INITDB_*_FILE) before dropping privileges.
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
 
   meilisearch:
     <<: *harden
