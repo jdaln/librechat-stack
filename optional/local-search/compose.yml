@@ -6,15 +6,26 @@ volumes:
   firecrawl_postgres_data: {}
 
 networks:
+  search_gateway:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.30.0/24
   search:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.31.31.0/24
   searx_internal:
     internal: true
+    ipam:
+      config:
+        - subnet: 172.31.32.0/24
   search_egress:
     internal: true
     ipam:
       config:
-        - subnet: 172.29.240.0/24
+        - subnet: 172.31.33.0/24
 
 x-json-logging: &json_logging
   driver: json-file
@@ -22,12 +33,27 @@ x-json-logging: &json_logging
     max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
     max-file: "${DOCKER_LOG_MAX_FILE:-3}"
 
+x-harden: &harden
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 300
+  ulimits:
+    nofile: { soft: 1024, hard: 2048 }
+  tmpfs:
+    - "/tmp:size=1g"
+    - "/run:size=500m"
+
 services:
   egress-proxy:
+    environment:
+      EGRESS_DNS_ENABLE: "1"  #TODO check what we can  do better
+      EGRESS_DNS_LISTEN_ADDRESS: 172.31.33.2
     networks:
-      - lan
-      - wan
-      - search_egress
+      lan: {}
+      wan: {}
+      search_egress:
+        ipv4_address: 172.31.33.2
 
   api:
     depends_on:
@@ -39,7 +65,7 @@ services:
         condition: service_healthy
     networks:
       - lan
-      - search
+      - search_gateway
     environment:
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
@@ -51,14 +77,23 @@ services:
       LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT:-8000}
       LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT:-300}
       LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT:-350}
-    volumes:
-      - ./optional/local-search/librechat-patches/search.cjs:/app/node_modules/@librechat/agents/dist/cjs/tools/search/search.cjs:ro
-      - ./optional/local-search/librechat-patches/tool.cjs:/app/node_modules/@librechat/agents/dist/cjs/tools/search/tool.cjs:ro
     logging: *json_logging
 
   searxng:
-    image: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:dc9c7aae0b77f8cd819dd8c7e6d489eab456000838e062c399f2bf37d230500e}
+    build:
+      context: .
+      dockerfile: optional/local-search/searxng/Dockerfile
+      args:
+        SEARXNG_IMAGE: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:3eb2fcb2153e0b1f8e9f3457695ed3db1b1443d1dbc2b6d23121835d33fd50aa}
+    image: librechat-stack/searxng-runtime:local
     container_name: searxng
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    ulimits:
+      nofile: { soft: 1024, hard: 2048 }
+    mem_limit: "512m"
+    cpus: "0.75"
     restart: always
     environment:
       SEARXNG_PORT: 8080
@@ -73,41 +108,62 @@ services:
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,searxng-valkey
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng,searxng-valkey
     volumes:
-      - ./optional/local-search/searxng/settings.yml:/etc/searxng/settings.yml:ro
-      - ./optional/local-search/searxng/limiter.toml:/etc/searxng/limiter.toml:ro
       - searxng_data:/var/cache/searxng
+    tmpfs:
+      - "/tmp:size=256m"
+      - "/run:size=64m"
     networks:
-      - searx_internal
-      - search_egress
+      searx_internal:
+        ipv4_address: 172.31.32.10
+      search_egress: {}
     depends_on:
       searxng-valkey:
         condition: service_healthy
     logging: *json_logging
 
   searxng-auth:
-    image: caddy:2.8-alpine
+    <<: *harden
+    image: caddy:2.11.3-alpine
     container_name: searxng-auth-proxy
+    mem_limit: "128m"
+    cpus: "0.5"
+    cap_add:
+      - NET_BIND_SERVICE
     restart: always
-    command: ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+    command: ["caddy", "run", "--config", "/run/secrets/searxng_auth_caddyfile", "--adapter", "caddyfile"]
     environment:
       SEARXNG_API_KEY: ${SEARXNG_API_KEY:-change-me-searxng-api-key}
     depends_on:
       searxng:
         condition: service_started
     networks:
-      - search
+      - search_gateway
       - searx_internal
     volumes:
-      - ./optional/local-search/searxng/auth-proxy.Caddyfile:/etc/caddy/Caddyfile:ro
+      - stack_secrets:/run/secrets:ro
+    tmpfs:
+      - "/tmp:size=128m"
+      - "/run:size=32m"
+      - "/config:size=16m"
+      - "/data:size=16m"
     logging: *json_logging
 
   searxng-valkey:
-    image: ${SEARXNG_VALKEY_IMAGE:-valkey/valkey:8-alpine}
+    <<: *harden
+    image: ${SEARXNG_VALKEY_IMAGE:-valkey/valkey:9.0.4-alpine}
     container_name: searxng-valkey
+    mem_limit: "128m"
+    cpus: "0.25"
+    cap_add:
+      - SETGID
+      - SETUID
     restart: always
     command: ["valkey-server", "--save", "", "--appendonly", "no", "--loglevel", "warning"]
     volumes:
       - searxng_valkey_data:/data
+    tmpfs:
+      - "/tmp:size=128m"
+      - "/run:size=32m"
     networks:
       - searx_internal
     healthcheck:
@@ -118,14 +174,47 @@ services:
     logging: *json_logging
 
   firecrawl-api:
-    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest@sha256:da24beae7325fbd42000bb9025ce982fd2de7c5fb819e9eeacb0e668b01b2f9e}
+    <<: *harden
+    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest@sha256:6c5049312506841d85e0bc386da34656630645dca867d72e9a33aa01a1f1b519}
     container_name: firecrawl-api
+    mem_limit: "3g"
+    cpus: "2.0"
     restart: always
-    command: ["node", "dist/src/harness.js", "--start-docker"]
+    command:
+      - /usr/bin/bash
+      - -lc
+      - |
+        set -eu
+        trap 'kill -TERM $(jobs -p) 2>/dev/null || true; wait' INT TERM
+        node dist/src/index.js &
+        api_pid=$$!
+        api_ready=0
+        startup_attempts="$${FIRECRAWL_API_STARTUP_ATTEMPTS:-1200}"
+        for _ in $$(seq 1 "$${startup_attempts}"); do
+          if ! kill -0 "$${api_pid}" 2>/dev/null; then
+            wait "$${api_pid}"
+            exit $$?
+          fi
+          if (: >/dev/tcp/127.0.0.1/3002) 2>/dev/null; then
+            api_ready=1
+            break
+          fi
+          sleep 2
+        done
+        if [ "$${api_ready}" != "1" ]; then
+          echo "Timed out waiting for Firecrawl API to listen on port 3002 after $${startup_attempts} attempts" >&2
+          exit 1
+        fi
+        node dist/src/services/queue-worker.js &
+        node dist/src/services/extract-worker.js &
+        node dist/src/services/worker/nuq-worker.js &
+        wait
     environment:
       HOST: 0.0.0.0
       PORT: 3002
       ENV: local
+      FIRECRAWL_API_STARTUP_ATTEMPTS: ${FIRECRAWL_API_STARTUP_ATTEMPTS:-1200}
+      HARNESS_STARTUP_TIMEOUT_MS: ${FIRECRAWL_HARNESS_STARTUP_TIMEOUT_MS:-1200000}
       LOGGING_LEVEL: ${FIRECRAWL_LOG_LEVEL:-warn}
       FIRECRAWL_NO_TELEMETRY: ${FIRECRAWL_NO_TELEMETRY:-1}
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
@@ -138,6 +227,8 @@ services:
       REDIS_URL: redis://firecrawl-redis:6379
       REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
       NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
+      NUQ_DATABASE_URL: postgresql://postgres:postgres@firecrawl-postgres:5432/postgres
+      NUQ_DATABASE_URL_LISTEN: postgresql://postgres:postgres@firecrawl-postgres:5432/postgres
       POSTGRES_HOST: firecrawl-postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: postgres
@@ -145,10 +236,11 @@ services:
       POSTGRES_PASSWORD: postgres
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
       BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-change-me-firecrawl-bull-auth}
-      MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-2}
-      NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-2}
-      CRAWL_CONCURRENT_REQUESTS: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-4}
-      BROWSER_POOL_SIZE: ${FIRECRAWL_BROWSER_POOL_SIZE:-2}
+      MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-1}
+      NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-1}
+      CRAWL_CONCURRENT_REQUESTS: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-2}
+      BROWSER_POOL_SIZE: ${FIRECRAWL_BROWSER_POOL_SIZE:-1}
+      NUQ_WORKER_COUNT: ${FIRECRAWL_NUQ_WORKER_COUNT:-1}
       EXTRACT_WORKER_PORT: 3004
       WORKER_PORT: 3005
       USE_DB_AUTHENTICATION: "false"
@@ -170,6 +262,8 @@ services:
       SEARXNG_ENGINES: ""
       SEARXNG_CATEGORIES: ""
     depends_on:
+      egress-proxy:
+        condition: service_started
       firecrawl-redis:
         condition: service_healthy
       firecrawl-rabbitmq:
@@ -179,27 +273,41 @@ services:
       firecrawl-playwright:
         condition: service_healthy
     networks:
+      - search_gateway
       - search
       - search_egress
+    tmpfs:
+      - "/tmp:size=1g"
+      - "/run:size=128m"
+      - "/var/cache/fontconfig:size=128m"
+      - "/root/.cache:size=128m"
+      - "/root/.fontconfig:size=64m"
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "node -e \"fetch('http://127.0.0.1:3002/').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))\""
+          "bash -ec '(: >/dev/tcp/127.0.0.1/3002) 2>/dev/null'"
         ]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 90s
+      timeout: 20s
+      retries: 10
+      start_period: 2400s
     logging: *json_logging
 
   firecrawl-playwright:
-    image: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest@sha256:5ac4f1e77dac2a8cc7742d822ce9d644e05166df41ae02ada1ed53d4d8cf3cd7}
+    image: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest@sha256:9e0737bc09df28275aab29726b1c0824a7725113945434e843385d487b7f7ec6}
     container_name: firecrawl-playwright
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    mem_limit: "2g"
+    cpus: "2.0"
+    shm_size: "1g"
     restart: always
     environment:
       PORT: 3000
-      MAX_CONCURRENT_PAGES: ${FIRECRAWL_MAX_CONCURRENT_PAGES:-4}
+      MAX_CONCURRENT_PAGES: ${FIRECRAWL_MAX_CONCURRENT_PAGES:-2}
       FIRECRAWL_NO_TELEMETRY: ${FIRECRAWL_NO_TELEMETRY:-1}
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
@@ -215,20 +323,28 @@ services:
     networks:
       - search
       - search_egress
+    dns:
+      - 172.31.33.2
+    depends_on:
+      egress-proxy:
+        condition: service_started
+    tmpfs:
+      - "/tmp:size=1g"
+      - "/run:size=128m"
     healthcheck:
       test:
         [
           "CMD-SHELL",
-          "node -e \"fetch('http://127.0.0.1:3000/').then((r) => process.exit(r.status < 500 ? 0 : 1)).catch(() => process.exit(1))\""
+          "node -e \"const s=require('net').connect(3000,'127.0.0.1'); s.setTimeout(5000); s.on('connect',()=>{s.end();process.exit(0)}); s.on('timeout',()=>process.exit(1)); s.on('error',()=>process.exit(1));\""
         ]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      timeout: 20s
+      retries: 60
+      start_period: 600s
     logging: *json_logging
 
   firecrawl-redis:
-    image: ${FIRECRAWL_REDIS_IMAGE:-redis:alpine@sha256:2afba59292f25f5d1af200496db41bea2c6c816b059f57ae74703a50a03a27d0}
+    image: ${FIRECRAWL_REDIS_IMAGE:-redis:8.6.3-alpine@sha256:d146f83b1e0f02fc27c26a50cee39338c736674c5959db84363e6ae3cd9e02d2}
     container_name: firecrawl-redis
     restart: always
     command: ["redis-server", "--bind", "0.0.0.0", "--loglevel", "warning"]
@@ -240,24 +356,34 @@ services:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 12
+      start_period: 60s
     logging: *json_logging
 
   firecrawl-rabbitmq:
-    image: ${FIRECRAWL_RABBITMQ_IMAGE:-rabbitmq:3-management@sha256:e582c0bc7766f3342496d8485efb5a1df782b5ce3886ad017e2eaae442311f69}
+    image: ${FIRECRAWL_RABBITMQ_IMAGE:-rabbitmq:4.3.0-management@sha256:8f3ab1dc6fb3b17ff59ba4e9ceed187c1711a4af831242b733b1e6949625b315}
     container_name: firecrawl-rabbitmq
     restart: always
+    environment:
+      RABBITMQ_ERLANG_COOKIE: ${FIRECRAWL_RABBITMQ_ERLANG_COOKIE:-local-firecrawl-rabbit-cookie}
     networks:
       - search
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 15s
-      timeout: 10s
-      retries: 8
+      timeout: 20s
+      retries: 60
+      start_period: 600s
     logging: *json_logging
 
   firecrawl-postgres:
-    image: ${FIRECRAWL_POSTGRES_IMAGE:-ghcr.io/firecrawl/nuq-postgres:latest@sha256:8565e5f46000085c16d247a4354c41e2439dbcf1640f7dd6e6406c0b18c31732}
+    build:
+      context: .
+      dockerfile: optional/local-search/firecrawl-postgres/Dockerfile
+      args:
+        FIRECRAWL_POSTGRES_BASE_IMAGE: ${FIRECRAWL_POSTGRES_BASE_IMAGE:-postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641}
+        FIRECRAWL_POSTGRES_SCHEMA_IMAGE: ${FIRECRAWL_POSTGRES_SCHEMA_IMAGE:-ghcr.io/firecrawl/nuq-postgres:latest@sha256:f9388bd25ae2e1f1d034518236f993ce236173c1d8800ce24092ea6643a95a33}
+    image: librechat-stack/firecrawl-postgres-runtime:local
     container_name: firecrawl-postgres
     restart: always
     environment:
@@ -271,13 +397,22 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d postgres"]
       interval: 10s
-      timeout: 5s
-      retries: 10
+      timeout: 20s
+      retries: 20
+      start_period: 180s
     logging: *json_logging
 
   jina-reranker:
-    image: ${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-tiny-en}
+    <<: *harden
+    build:
+      context: .
+      dockerfile: optional/local-search/jina/Dockerfile
+      args:
+        JINA_RERANKER_BASE_IMAGE: ${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-tiny-en}
+    image: librechat-stack/jina-reranker-runtime:local
     container_name: jina-reranker
+    mem_limit: "1g"
+    cpus: "1.0"
     restart: always
     env_file:
       - .env
@@ -290,17 +425,16 @@ services:
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
       OMP_NUM_THREADS: ${JINA_RERANKER_OMP_NUM_THREADS:-1}
+      JINA_RERANKER_LOAD_MODEL: ${JINA_RERANKER_LOAD_MODEL:-0}
       JINA_RERANKER_MAX_BATCH_SIZE: ${JINA_RERANKER_MAX_BATCH_SIZE:-2}
       JINA_RERANKER_LOG_LEVEL: ${JINA_RERANKER_LOG_LEVEL:-WARNING}
     volumes:
       - jina_reranker_model_cache:/app/.cache
-      - ./optional/local-search/jina/main.py:/app/main.py:ro
-      - ./optional/local-search/jina/api.py:/app/api.py:ro
-      - ./optional/local-search/jina/models.py:/app/models.py:ro
+    tmpfs:
+      - "/tmp:size=512m"
+      - "/run:size=64m"
     networks:
-      - search
-    ports:
-      - "127.0.0.1:${JINA_RERANKER_PORT:-8787}:8000"
+      - search_gateway
     healthcheck:
       test:
         [
@@ -308,7 +442,7 @@ services:
           "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').getcode() == 200 else 1)\""
         ]
       interval: 30s
-      timeout: 10s
-      retries: 5
-      start_period: 60s
+      timeout: 60s
+      retries: 30
+      start_period: 600s
     logging: *json_logging

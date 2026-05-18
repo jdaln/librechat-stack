@@ -11,7 +11,7 @@
 
   @authorized header X-API-Key {$SEARXNG_API_KEY}
   handle @authorized {
-    reverse_proxy searxng:8080
+    reverse_proxy 172.31.32.10:8080
   }
 
   respond "unauthorized" 401

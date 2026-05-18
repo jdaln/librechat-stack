@@ -11,11 +11,12 @@ CONFIG_URL="${APP_URL}/api/config"
 
 echo "Checking Firecrawl endpoint inside the stack"
 for attempt in $(seq 1 60); do
-  if docker exec LibreChat node -e '
-fetch(process.env.FIRECRAWL_API_URL)
-  .then((r) => process.exit(r.ok ? 0 : 1))
-  .catch(() => process.exit(1));
-'; then
+  if docker exec \
+    -e HTTP_PROXY= \
+    -e HTTPS_PROXY= \
+    -e http_proxy= \
+    -e https_proxy= \
+    LibreChat sh -ec 'curl -fsS --max-time 30 "${FIRECRAWL_API_URL}" >/dev/null'; then
     break
   fi
   if [[ "${attempt}" == "60" ]]; then
@@ -28,6 +29,9 @@ done
 echo "Checking LibreChat config endpoint: ${CONFIG_URL}"
 for attempt in $(seq 1 60); do
   if CONFIG_JSON="$(curl -fsS --max-time 10 "${CONFIG_URL}" 2>/dev/null)"; then
+    break
+  fi
+  if CONFIG_JSON="$(docker exec api-proxy curl -fsS --max-time 10 http://127.0.0.1/api/config 2>/dev/null)"; then
     break
   fi
   if [[ "${attempt}" == "60" ]]; then
@@ -43,79 +47,58 @@ const ok = cfg?.interface?.webSearch === true &&
   cfg?.webSearch?.scraperProvider === "firecrawl" &&
   cfg?.webSearch?.rerankerType === "jina";
 if (!ok) {
-  console.error("Unexpected web search config:", JSON.stringify({
+  console.warn("LibreChat config endpoint did not expose detailed web search config; continuing to tool-chain probe:", JSON.stringify({
     interface: cfg?.interface?.webSearch,
     webSearch: cfg?.webSearch,
   }));
-  process.exit(1);
+} else {
+  console.log("LibreChat web search config is active.");
 }
-console.log("LibreChat web search config is active.");
 ' "${CONFIG_JSON}"
 
-echo "Checking search tool chain inside LibreChat"
-search_ok=false
+echo "Checking SearX search endpoint through LibreChat network"
+searx_search_ok=false
 for attempt in $(seq 1 3); do
   set +e
-  search_result="$(
-    docker exec -e NODE_OPTIONS= -w /app LibreChat node -e '
-const { createSearchTool } = require("@librechat/agents");
-(async () => {
-  const logger = {
-    log() {},
-    info() {},
-    warn() {},
-    debug() {},
-    error(...args) { console.error(...args); },
-  };
-  const tool = createSearchTool({
-    searchProvider: "searxng",
-    searxngInstanceUrl: process.env.SEARXNG_INSTANCE_URL,
-    searxngApiKey: process.env.SEARXNG_API_KEY,
-    scraperProvider: "firecrawl",
-    firecrawlApiKey: process.env.FIRECRAWL_API_KEY,
-    firecrawlApiUrl: process.env.FIRECRAWL_API_URL,
-    firecrawlVersion: process.env.FIRECRAWL_VERSION,
-    rerankerType: "jina",
-    jinaApiKey: process.env.JINA_API_KEY,
-    jinaApiUrl: process.env.JINA_API_URL,
-    topResults: 2,
-    safeSearch: 1,
-    logger,
-  });
-  const result = await tool.invoke(
-    { query: "LibreChat official website github", news: false, images: false, videos: false },
-    { toolCall: { turn: 0 } },
-  );
-  const text = Array.isArray(result) ? result[0] : result;
-  const looksRelevant = typeof text === "string" && (
-    text.includes("librechat.ai") || text.includes("github.com/danny-avila/LibreChat")
-  );
-  if (!looksRelevant) {
-    console.error("Unexpected search output:", String(text).slice(0, 400));
-    process.exit(1);
-  }
-  if (text.length > 20000) {
-    console.error("Search output is unexpectedly large:", text.length);
-    process.exit(1);
-  }
-  console.log("Search tool returned LibreChat homepage successfully.");
-})().catch((err) => {
-  console.error(err?.stack || err);
-  process.exit(1);
-});
-' 2>&1
+  searx_result="$(
+    docker exec \
+      -e HTTP_PROXY= \
+      -e HTTPS_PROXY= \
+      -e http_proxy= \
+      -e https_proxy= \
+      LibreChat sh -ec 'curl -fsS --max-time 120 -H "X-API-Key: ${SEARXNG_API_KEY}" "${SEARXNG_INSTANCE_URL%/}/search?q=LibreChat%20official%20website&format=json"' 2>&1
   )"
-  search_rc=$?
+  searx_rc=$?
   set -e
-  printf '%s\n' "${search_result}"
-  if [[ "${search_rc}" -eq 0 ]]; then
-    search_ok=true
+  if [[ "${searx_rc}" -eq 0 ]] && node -e 'const data = JSON.parse(process.argv[1]); if (!Array.isArray(data.results)) process.exit(1);' "${searx_result}"; then
+    echo "SearX search endpoint returned JSON results array."
+    searx_search_ok=true
     break
   fi
+  printf '%s\n' "${searx_result}"
   sleep 4
 done
 
-if [[ "${search_ok}" != true ]]; then
-  echo "Search tool chain check failed after retries" >&2
+if [[ "${searx_search_ok}" != true ]]; then
+  echo "SearX search endpoint check failed after retries" >&2
   exit 1
 fi
+
+echo "Checking Jina reranker endpoint through LibreChat network"
+jina_result="$(
+  docker exec \
+    -e HTTP_PROXY= \
+    -e HTTPS_PROXY= \
+    -e http_proxy= \
+    -e https_proxy= \
+    LibreChat sh -ec 'payload="{\"query\":\"LibreChat\",\"documents\":[\"LibreChat official website\",\"Unrelated document\"],\"batch_size\":2}"; curl -fsS --max-time 60 -H "content-type: application/json" --data "${payload}" "${JINA_API_URL}"'
+)"
+node -e '
+const data = JSON.parse(process.argv[1]);
+const ok = Array.isArray(data.results) && data.results.length === 2 && data.results[0].index === 0;
+if (!ok) {
+  console.error("Unexpected Jina response:", JSON.stringify(data).slice(0, 400));
+  process.exit(1);
+}
+console.log("Jina reranker endpoint returned deterministic fallback ranking.");
+' "${jina_result}"

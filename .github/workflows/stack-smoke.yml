@@ -102,7 +102,6 @@ jobs:
 
           JINA_API_KEY=ci-jina
           JINA_API_URL=http://jina-reranker:8000/librechat/v1/rerank
-          JINA_RERANKER_PORT=8787
           JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
           JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
           JINA_RERANKER_LOG_LEVEL=WARNING

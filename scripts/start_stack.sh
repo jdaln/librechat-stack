@@ -138,6 +138,35 @@ wait_for_docker() {
   exit 1
 }
 
+wait_container_success() {
+  local container="$1"
+  local attempts="${2:-120}"
+  local i status exit_code
+
+  for ((i = 1; i <= attempts; i++)); do
+    if read -r status exit_code < <(docker inspect "${container}" --format '{{.State.Status}} {{.State.ExitCode}}' 2>/dev/null); then
+      if [[ "${status}" == "exited" ]]; then
+        if [[ "${exit_code}" == "0" ]]; then
+          return 0
+        fi
+        docker logs "${container}" >&2 || true
+        echo "ERROR: ${container} exited with ${exit_code}" >&2
+        exit 1
+      fi
+      if [[ "${status}" == "dead" ]]; then
+        docker logs "${container}" >&2 || true
+        echo "ERROR: ${container} is dead" >&2
+        exit 1
+      fi
+    fi
+    sleep 2
+  done
+
+  docker logs "${container}" >&2 || true
+  echo "ERROR: timed out waiting for ${container} to exit successfully" >&2
+  exit 1
+}
+
 compose_up() {
   if [[ ! -f "${PROJECT_ROOT}/.env" ]]; then
     echo "ERROR: ${PROJECT_ROOT}/.env not found. Run: cp template_dot_env .env" >&2
@@ -162,6 +191,10 @@ compose_up() {
       export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
       export COMPOSE_DOCKER_CLI_BUILD="${COMPOSE_DOCKER_CLI_BUILD:-1}"
     fi
+    log "Starting MongoDB bootstrap services"
+    docker_compose --env-file .env "${compose_files[@]}" up -d mongodb mongo-init
+    wait_container_success mongo-init
+
     log "Starting Docker Compose services"
     docker_compose --env-file .env "${compose_files[@]}" up -d
     docker_compose --env-file .env "${compose_files[@]}" ps
@@ -184,6 +217,7 @@ ensure_secret_permissions() {
   }
 
   mkdir -p "${secrets_dir}"
+  chmod u+w "${secrets_dir}"/runtime-mongo-*.txt 2>/dev/null || true
 
   local mongo_root_user mongo_root_password mongo_app_user mongo_app_password
   local code_minio_user code_minio_password searx_api_key
@@ -225,6 +259,8 @@ ensure_secret_permissions() {
       log "WARNING: SEARXNG_API_KEY is unset or placeholder; set a strong value in .env"
     fi
   fi
+
+  "${SCRIPT_DIR}/populate_stack_secrets_volume.sh"
 }
 
 main() {

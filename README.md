@@ -66,8 +66,8 @@ exit
 ## How Egress Hardening Works
 
 The `api` and `rag_api` containers have no direct internet access. All their outbound HTTP(S) goes through an internal Squid proxy that only allows domains listed in `optional/egress-proxy/allowed_domains.txt`.
-The `sandpack` container is LAN-only (no WAN attachment); browser access on `http://127.0.0.1:80` is proxied through `api-proxy`.
-`api-proxy` stays dual-homed (`lan` + `wan`) because Docker host port publishing on this stack breaks when the proxy is attached only to an `internal: true` network.
+The `sandpack` container is isolated on a separate internal frontend network; browser access on `http://127.0.0.1:80` is proxied through `api-proxy`.
+`api-proxy` stays on the two internal frontend networks plus `ingress` because Docker host port publishing on this stack breaks when the proxy is attached only to an `internal: true` network. The `ingress` bridge has IP masquerading disabled, so it supports localhost-published ports without giving the proxy useful outbound internet access.
 `rag_api` is pinned to an official digest (`registry.librechat.ai/...@sha256:...`) to avoid silent image drift.
 
 If an LLM prompt injection tries to exfiltrate data to an unknown host, Squid blocks it. Quick verification:
@@ -89,7 +89,7 @@ const test=(h)=>new Promise(r=>{\
 
 Edit the allowlist and restart the proxy to change which domains are permitted.
 
-When the local-search overlay is enabled, SearXNG/Firecrawl egress is routed through Squid with full access logging. By design this path is auditable but not domain-allowlisted, so the stack can scrape arbitrary result domains.
+When the local-search overlay is enabled, SearXNG/Firecrawl egress is routed through Squid with full access logging. By design this path is auditable but not domain-allowlisted, so the stack can scrape arbitrary public result domains. Squid still denies local, private, link-local, reserved, and internal-name destinations to avoid turning search scraping into a private-network SSRF path.
 
 ---
 
@@ -157,10 +157,11 @@ The helper script (`scripts/prepare_code_interpreter_image.sh`) clones the upstr
 <details>
 <summary>Implementation notes</summary>
 
-- Pinned to commit `31c1d5e` on the `dev` branch.
+- Pinned to commit `170194f` on the `dev` branch.
 - The upstream pre-warmed REPL pool doesn't start reliably under Colima's hardened tmpfs layout, so `REPL_ENABLED` and `SANDBOX_POOL_ENABLED` are off. Python falls back to one-shot nsjail execution (slower, stable).
 - The container needs `SYS_ADMIN` for nsjail.
-- Interpreter traffic stays on the internal `lan` network — no WAN egress.
+- The interpreter backend, Redis, and MinIO live on a dedicated internal `code_interpreter` network. LibreChat reaches the backend across a separate internal `code_gateway` network through `code-interpreter-proxy`, which preserves the `code-interpreter-api` DNS alias for existing `.env` files.
+- Interpreter traffic has no WAN egress and no shared network path to MongoDB, RAG, Meilisearch, or Squid.
 - `api` sets `HTTP_PROXY`/`HTTPS_PROXY` but not `PROXY`, so `execute_code` calls reach the interpreter directly without Squid.
 - MinIO is pinned to `RELEASE.2025-09-07` (later images went source-only).
 - MinIO credentials in `template_dot_env` are intentionally non-default placeholders. Set strong values before enabling this overlay.
@@ -193,7 +194,7 @@ Search context is bounded by default (3 results, 2 scraped sources, 2 highlights
 - SearXNG config (`optional/local-search/searxng/settings.yml`): JSON output enabled (LibreChat requires it), noisy engines removed, timeout lowered to 4 s.
 - SearXNG requests from LibreChat now flow through `searxng-auth-proxy`, which enforces `X-API-Key` using `SEARXNG_API_KEY`. The raw SearXNG service is isolated on a private `searx_internal` network.
 - Rate limiting uses Valkey with a private-IP allowlist so LibreChat doesn't trip bot detection.
-- Firecrawl, its Redis, RabbitMQ, and Postgres sit on a dedicated `search` network. SearXNG + Firecrawl web-fetch traffic is routed through Squid on a dedicated `search_egress` subnet so requests are auditable in proxy logs.
+- LibreChat reaches SearXNG auth, Firecrawl API, and Jina on `search_gateway`; Firecrawl backing services stay on a separate `search` network. SearXNG + Firecrawl web-fetch traffic is routed through Squid on a dedicated `search_egress` subnet so requests are auditable in proxy logs.
 - The Jina compatibility patch makes `batch_size` optional — LibreChat's client omits it.
 - A mounted search patch caps scraped text, requests `markdown` + `onlyMainContent`, and strips raw `content` from the artifact returned to the model.
 - After editing files under `optional/local-search/jina/`, recreate the container to pick up changes.
@@ -309,5 +310,5 @@ Compose foundation adapted from [nicedexter](https://github.com/nicedexter).
 
 - Remaining known constraints (accepted for now):
   - `code-interpreter-api` still needs `SYS_ADMIN` + `apparmor:unconfined` for current nsjail runtime.
-  - `api-proxy` remains dual-homed (`lan` + `wan`) because host port publishing fails when attached only to internal networks in this Docker/Colima setup.
+  - Localhost ingress proxies remain dual-homed with `ingress` because host port publishing fails when attached only to internal networks in this Docker/Colima setup.
   - Search egress is intentionally auditable-not-allowlisted (to preserve SearX/Firecrawl web fetch behavior).
