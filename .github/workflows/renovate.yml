@@ -12,13 +12,14 @@ on:
     - cron: "23 10 * * 1"
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
 
 jobs:
   validate:
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Check Out
         uses: actions/checkout@v4
@@ -35,34 +36,30 @@ jobs:
   renovate:
     if: github.event_name != 'push'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
     steps:
       - name: Check Out
         uses: actions/checkout@v4
 
-      - name: Select Renovate Auth Mode
-        id: auth
+      - name: Require Renovate Token
         shell: bash
         run: |
-          if [[ -n "$RENOVATE_TOKEN" ]]; then
-            echo "mode=RENOVATE_TOKEN" >> "$GITHUB_OUTPUT"
-          else
-            echo "mode=GITHUB_TOKEN" >> "$GITHUB_OUTPUT"
+          # PRs created with the fallback GITHUB_TOKEN never trigger
+          # pull_request workflows (GitHub recursion guard), so dependency
+          # PRs would land with zero smoke checks. Refuse to run that way.
+          if [[ -z "$RENOVATE_TOKEN" ]]; then
+            echo "::error::RENOVATE_TOKEN secret is not configured. Renovate PRs created with GITHUB_TOKEN do not trigger the Stack Smoke workflow; set a PAT (repo + workflow scopes) or a GitHub App token." >&2
+            exit 1
           fi
         env:
           RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
-
-      - name: Log Renovate Auth Mode
-        shell: bash
-        run: |
-          echo "Running Renovate with ${{ steps.auth.outputs.mode }}"
-          if [[ "${{ steps.auth.outputs.mode }}" == "GITHUB_TOKEN" ]]; then
-            echo "Note: GITHUB_TOKEN can be more limited than a PAT for workflow-updating PRs."
-          fi
 
       - name: Run Renovate
         uses: renovatebot/github-action@e23f4d9675532445118c886434f5a34292b630b4 # v46.0.2
         with:
           configurationFile: renovate.json
-          token: ${{ secrets.RENOVATE_TOKEN || github.token }}
+          token: ${{ secrets.RENOVATE_TOKEN }}
         env:
           RENOVATE_PLATFORM: github

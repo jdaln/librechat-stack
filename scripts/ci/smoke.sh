@@ -9,6 +9,18 @@ ARTIFACTS_DIR="${CI_ARTIFACTS_DIR:-ci_artifacts}"
 SMOKE_CLEAN_VOLUMES="${SMOKE_CLEAN_VOLUMES:-0}"
 SMOKE_LOCK_DIR="${SMOKE_LOCK_DIR:-/tmp/librechat-stack-smoke.lock}"
 LOCK_HELD=0
+# Overall budget for the run. Individual waits are generous, but their sum must
+# stay inside the CI job timeout with room for the cleanup trap to collect
+# diagnostics - a run that GitHub kills uploads no artifacts at all.
+SMOKE_TOTAL_DEADLINE="${SMOKE_TOTAL_DEADLINE:-2100}"
+
+deadline_check() {
+  if (( SECONDS > SMOKE_TOTAL_DEADLINE )); then
+    echo "Smoke run exceeded SMOKE_TOTAL_DEADLINE (${SMOKE_TOTAL_DEADLINE}s); failing fast so diagnostics can be collected" >&2
+    return 1
+  fi
+  return 0
+}
 
 compose_files=(
   -f docker-compose.yml
@@ -236,16 +248,34 @@ log() {
 }
 
 acquire_lock() {
-  if ! mkdir "${SMOKE_LOCK_DIR}" 2>/dev/null; then
-    echo "Another smoke run is already active (${SMOKE_LOCK_DIR}); refusing to race the same compose project." >&2
+  if mkdir "${SMOKE_LOCK_DIR}" 2>/dev/null; then
+    printf '%s' "$$" >"${SMOKE_LOCK_DIR}/pid"
+    LOCK_HELD=1
+    return
+  fi
+
+  # A SIGKILL/reboot can leave the lock behind; treat it as stale when the
+  # recorded holder is no longer running.
+  local holder
+  holder="$(cat "${SMOKE_LOCK_DIR}/pid" 2>/dev/null || true)"
+  if [[ -n "${holder}" ]] && kill -0 "${holder}" 2>/dev/null; then
+    echo "Another smoke run is already active (pid ${holder}, ${SMOKE_LOCK_DIR}); refusing to race the same compose project." >&2
     exit 75
   fi
+
+  echo "Removing stale smoke lock ${SMOKE_LOCK_DIR} (holder ${holder:-unknown} is not running)" >&2
+  rm -rf "${SMOKE_LOCK_DIR}"
+  if ! mkdir "${SMOKE_LOCK_DIR}" 2>/dev/null; then
+    echo "Failed to acquire smoke lock after clearing a stale one (${SMOKE_LOCK_DIR})" >&2
+    exit 75
+  fi
+  printf '%s' "$$" >"${SMOKE_LOCK_DIR}/pid"
   LOCK_HELD=1
 }
 
 release_lock() {
   if [[ "${LOCK_HELD}" == "1" ]]; then
-    rmdir "${SMOKE_LOCK_DIR}" 2>/dev/null || true
+    rm -rf "${SMOKE_LOCK_DIR}" 2>/dev/null || true
     LOCK_HELD=0
   fi
 }
@@ -310,6 +340,7 @@ wait_http() {
   local container_path static_path i
 
   for ((i = 1; i <= attempts; i++)); do
+    deadline_check || return 1
     if run_with_timeout "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" curl -fsS "$url" >/dev/null 2>&1; then
       return 0
     fi
@@ -357,6 +388,7 @@ wait_internal_http() {
   fi
 
   for ((i = 1; i <= attempts; i++)); do
+    deadline_check || return 1
     if run_with_timeout "${probe_timeout}" docker exec \
       -e HTTP_PROXY= \
       -e HTTPS_PROXY= \
@@ -378,6 +410,7 @@ wait_container_success() {
   local i status exit_code
 
   for ((i = 1; i <= attempts; i++)); do
+    deadline_check || return 1
     if read -r status exit_code < <(docker inspect "${container}" --format '{{.State.Status}} {{.State.ExitCode}}' 2>/dev/null); then
       if [[ "${status}" == "exited" ]]; then
         if [[ "${exit_code}" == "0" ]]; then
@@ -404,12 +437,19 @@ wait_container_success() {
 wait_container_healthy() {
   local container="$1"
   local attempts="${2:-120}"
-  local i status exit_code health
+  local i status exit_code restarts health
 
   for ((i = 1; i <= attempts; i++)); do
-    if read -r status exit_code health < <(docker inspect "${container}" --format '{{.State.Status}} {{.State.ExitCode}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null); then
+    deadline_check || return 1
+    if read -r status exit_code restarts health < <(docker inspect "${container}" --format '{{.State.Status}} {{.State.ExitCode}} {{.RestartCount}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' 2>/dev/null); then
       if [[ "${health}" == "healthy" ]]; then
         return 0
+      fi
+      # Fail fast on crash loops instead of burning the whole wait budget.
+      if [[ "${restarts:-0}" -ge "${SMOKE_MAX_CONTAINER_RESTARTS:-3}" ]]; then
+        run_with_timeout "${SMOKE_DOCKER_LOG_TIMEOUT:-45}" docker logs "${container}" >&2 || true
+        echo "${container} is restart-looping (${restarts} restarts, status=${status}, exit=${exit_code}); giving up early" >&2
+        return 1
       fi
     fi
     sleep 2
@@ -817,6 +857,13 @@ log "Checking RAG image source and pin"
 rag_image="$(docker inspect rag_api --format '{{.Config.Image}}')"
 if [[ "${rag_image}" != registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:* ]] || [[ "${rag_image}" != *"@sha256:"* ]]; then
   echo "Unexpected rag_api image, expected registry.librechat.ai digest pin: ${rag_image}" >&2
+  exit 1
+fi
+
+log "Checking code interpreter image pin"
+ci_image="$(docker inspect code-interpreter-api --format '{{.Config.Image}}')"
+if [[ "${ci_image}" == */* && "${ci_image}" != *"@sha256:"* ]]; then
+  echo "code-interpreter-api uses a remote image that is not digest-pinned: ${ci_image}" >&2
   exit 1
 fi
 

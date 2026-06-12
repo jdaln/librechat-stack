@@ -160,6 +160,18 @@
     },
     {
       "customType": "regex",
+      "description": "Track the code interpreter image pin in the smoke workflow CI env",
+      "fileMatch": [
+        "/^\\.github\\/workflows\\/stack-smoke\\.yml$/"
+      ],
+      "matchStrings": [
+        "CODE_INTERPRETER_IMAGE=(?<depName>[a-z0-9][a-z0-9.\\-/]*):(?<currentValue>[a-zA-Z0-9][\\w.\\-]*?)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\\n"
+      ],
+      "datasourceTemplate": "docker",
+      "versioningTemplate": "docker"
+    },
+    {
+      "customType": "regex",
       "description": "Track digest-pinned image build args in docker-compose.yml",
       "fileMatch": [
         "/^docker-compose\\.yml$/"
