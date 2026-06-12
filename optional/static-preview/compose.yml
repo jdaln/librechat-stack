@@ -63,7 +63,12 @@ services:
       - ingress
       - static_preview_net
     volumes:
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: static-preview
     tmpfs:
       - "/tmp:size=128m"
       - "/run:size=32m"

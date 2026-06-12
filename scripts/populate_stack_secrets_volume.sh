@@ -139,27 +139,41 @@ main() {
     echo "ERROR: stack secrets init container exited before files could be copied" >&2
     exit 1
   fi
-  docker exec "${INIT_CONTAINER}" sh -lc 'rm -rf /run/secrets/*'
 
-  copy_required "${PROJECT_ROOT}/librechat.yaml" librechat_yaml
-  copy_required "${PROJECT_ROOT}/optional/api-proxy/Caddyfile" api_proxy_caddyfile
-  copy_required "${PROJECT_ROOT}/optional/egress-proxy/squid.conf" squid_conf
-  copy_required "${PROJECT_ROOT}/optional/egress-proxy/allowed_domains.txt" squid_allowlist
-  copy_required "${PROJECT_ROOT}/optional/egress-proxy/undici-proxy-bootstrap.cjs" undici_proxy_bootstrap.cjs
-  copy_required "${PROJECT_ROOT}/optional/local-search/searxng/auth-proxy.Caddyfile" searxng_auth_caddyfile
-  copy_required "${PROJECT_ROOT}/optional/static-preview/Caddyfile" static_preview_caddyfile
-  copy_required "${SECRETS_DIR}/runtime-mongo-root-user.txt" mongo_root_user
-  copy_required "${SECRETS_DIR}/runtime-mongo-root-password.txt" mongo_root_password
-  copy_required "${SECRETS_DIR}/runtime-mongo-app-user.txt" mongo_app_user
-  copy_required "${SECRETS_DIR}/runtime-mongo-app-password.txt" mongo_app_password
+  # One subdirectory per consuming service; each service mounts only its own
+  # subtree (volume subpath), so e.g. the api container cannot read the Mongo
+  # root credentials. In-container paths stay /run/secrets/<name>.
+  docker exec "${INIT_CONTAINER}" sh -lc '
+    rm -rf /run/secrets/* &&
+    mkdir -p /run/secrets/egress-proxy /run/secrets/api-proxy /run/secrets/api \
+             /run/secrets/mongodb /run/secrets/mongo-init /run/secrets/rag-api \
+             /run/secrets/searxng-auth /run/secrets/static-preview
+  '
 
-  if [[ -f "${SECRETS_DIR}/gcp-sa.json" ]]; then
-    docker cp "${SECRETS_DIR}/gcp-sa.json" "${INIT_CONTAINER}:/run/secrets/gcp_sa"
-  else
-    docker exec "${INIT_CONTAINER}" sh -lc "printf '{}' > /run/secrets/gcp_sa"
-  fi
+  copy_required "${PROJECT_ROOT}/librechat.yaml" api/librechat_yaml
+  copy_required "${PROJECT_ROOT}/optional/egress-proxy/undici-proxy-bootstrap.cjs" api/undici_proxy_bootstrap.cjs
+  copy_required "${PROJECT_ROOT}/optional/api-proxy/Caddyfile" api-proxy/api_proxy_caddyfile
+  copy_required "${PROJECT_ROOT}/optional/egress-proxy/squid.conf" egress-proxy/squid_conf
+  copy_required "${PROJECT_ROOT}/optional/egress-proxy/allowed_domains.txt" egress-proxy/squid_allowlist
+  copy_required "${PROJECT_ROOT}/optional/local-search/searxng/auth-proxy.Caddyfile" searxng-auth/searxng_auth_caddyfile
+  copy_required "${PROJECT_ROOT}/optional/static-preview/Caddyfile" static-preview/static_preview_caddyfile
+  copy_required "${SECRETS_DIR}/runtime-mongo-root-user.txt" mongodb/mongo_root_user
+  copy_required "${SECRETS_DIR}/runtime-mongo-root-password.txt" mongodb/mongo_root_password
+  copy_required "${SECRETS_DIR}/runtime-mongo-root-user.txt" mongo-init/mongo_root_user
+  copy_required "${SECRETS_DIR}/runtime-mongo-root-password.txt" mongo-init/mongo_root_password
+  copy_required "${SECRETS_DIR}/runtime-mongo-app-user.txt" mongo-init/mongo_app_user
+  copy_required "${SECRETS_DIR}/runtime-mongo-app-password.txt" mongo-init/mongo_app_password
 
-  docker exec "${INIT_CONTAINER}" sh -lc 'chmod 444 /run/secrets/*'
+  local gcp_target
+  for gcp_target in api rag-api; do
+    if [[ -f "${SECRETS_DIR}/gcp-sa.json" ]]; then
+      docker cp "${SECRETS_DIR}/gcp-sa.json" "${INIT_CONTAINER}:/run/secrets/${gcp_target}/gcp_sa"
+    else
+      docker exec "${INIT_CONTAINER}" sh -lc "printf '{}' > /run/secrets/${gcp_target}/gcp_sa"
+    fi
+  done
+
+  docker exec "${INIT_CONTAINER}" sh -lc 'chmod 555 /run/secrets/* && chmod 444 /run/secrets/*/*'
 }
 
 main "$@"

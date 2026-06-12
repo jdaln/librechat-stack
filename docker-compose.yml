@@ -94,7 +94,12 @@ services:
       - lan
       - wan
     volumes:
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: egress-proxy
     restart: always
     logging: *json_logging
 
@@ -118,7 +123,12 @@ services:
       - sandpack_frontend
       - ingress
     volumes:
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: api-proxy
     restart: always
     logging: *json_logging
 
@@ -186,7 +196,12 @@ services:
       - lbc_api_images:/app/client/public/images:ro
       - lbc_api_uploads:/app/uploads
       - lbc_app_data:/app/data
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: api
     networks:
       - lan    # internal comms (DBs, rag_api, egress-proxy)
       - api_frontend
@@ -234,7 +249,12 @@ services:
       ]
     volumes:
       - mongo_data:/data/db
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: mongodb
     networks: [lan]
     restart: always
     logging: *json_logging
@@ -264,7 +284,12 @@ services:
     restart: "no"
     logging: *json_logging
     volumes:
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: mongo-init
     command:
       - /bin/sh
       - -lc
@@ -393,7 +418,12 @@ services:
     restart: always
     # platform: linux/amd64
     volumes:
-      - stack_secrets:/run/secrets:ro
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: rag-api
     healthcheck:
       test:
         [
