@@ -170,6 +170,17 @@ services:
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
       CONFIG_PATH: /run/secrets/librechat_yaml
       MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongodb:27017/LibreChat?authSource=LibreChat
+      # env_file injects all of .env for app configuration; blank the
+      # bootstrap/datastore-only credentials the app process must never hold.
+      # mongo-init reads root creds from secret files, MONGO_URI above already
+      # carries the scoped app user, and only rag_api talks to Postgres.
+      MONGO_ROOT_USER: ""
+      MONGO_ROOT_PASSWORD: ""
+      MONGO_APP_USER: ""
+      MONGO_APP_PASSWORD: ""
+      POSTGRES_DB: ""
+      POSTGRES_USER: ""
+      POSTGRES_PASSWORD: ""
     # No host binds — use named volumes only
     volumes:
       - lbc_api_images:/app/client/public/images:ro
@@ -296,10 +307,10 @@ services:
   meilisearch:
     image: getmeili/meilisearch:v1.43.1
     container_name: chat-meilisearch
-    env_file:
-      - .env    # provides MEILI_MASTER_KEY
+    # No env_file: this service only needs its own key, not the full .env.
     environment:
       MEILI_HOST: http://meilisearch:7700
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY:?set MEILI_MASTER_KEY in .env}
       MEILI_NO_ANALYTICS: "true"
       MEILI_LOG_LEVEL: ${MEILI_LOG_LEVEL:-WARN}
     volumes:
@@ -316,8 +327,11 @@ services:
     image: pgvector/pgvector:0.8.2-pg15-trixie
     container_name: vectordb
     command: ["postgres", "-c", "listen_addresses=*"]
-    env_file:
-      - .env
+    # No env_file: this service only needs its own credentials, not the full .env.
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
     volumes:
       - pgdata2:/var/lib/postgresql/data
     networks: [lan]
@@ -346,13 +360,25 @@ services:
         condition: service_healthy
       egress-proxy:
         condition: service_started
-    env_file:
-      - .env
+    # No env_file: the RAG API only needs the variables below, not the full
+    # .env (Mongo credentials, Meili master key, provider keys, ...). If you
+    # switch EMBEDDINGS_PROVIDER, add that provider's key here explicitly.
     environment:
       # DEBUG_RAG_API: "True"
       RAG_HOST: 0.0.0.0
       DB_HOST: vectordb
       RAG_PORT: ${RAG_PORT:-8000}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB in .env}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER in .env}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET in .env}
+      EMBEDDINGS_PROVIDER: ${EMBEDDINGS_PROVIDER:-vertexai}
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-text-embedding-004}
+      PDF_EXTRACT_IMAGES: ${PDF_EXTRACT_IMAGES:-True}
+      GOOGLE_APPLICATION_CREDENTIALS: ${GOOGLE_APPLICATION_CREDENTIALS:-/run/secrets/gcp_sa}
+      GOOGLE_SERVICE_KEY_FILE: ${GOOGLE_SERVICE_KEY_FILE:-/run/secrets/gcp_sa}
+      GOOGLE_LOC: ${GOOGLE_LOC:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
       EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}

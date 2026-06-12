@@ -44,6 +44,7 @@ BUNDLER_PORT=31234
 # Security & Secrets
 #
 # IMPORTANT: Change all default "24389_CHANGE_ME" values to strong, unique secrets.
+# The start scripts refuse to bring the stack up while placeholder values remain.
 # You can generate a secure random key with:
 #   openssl rand -hex 32
 # ------------------------------------------------------------------------------

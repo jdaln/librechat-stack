@@ -37,6 +37,47 @@ write_runtime_secret() {
   printf '%s' "${value}" > "${path}"
 }
 
+# Placeholder values shipped by template_dot_env (or common insecure defaults)
+# must never reach a running stack.
+PLACEHOLDER_REGEX='(24389_CHANGE_ME|change-me|minioadmin)'
+
+require_env_secret() {
+  local key="$1"
+  local value
+
+  value="$(read_env_var "${key}")"
+  if [[ -z "${value}" ]]; then
+    echo "ERROR: ${key} is missing or empty in ${ENV_FILE}" >&2
+    exit 1
+  fi
+  if [[ "${value}" =~ ${PLACEHOLDER_REGEX} ]]; then
+    echo "ERROR: ${key} in ${ENV_FILE} still uses a placeholder value; generate a strong secret, e.g. openssl rand -hex 32" >&2
+    exit 1
+  fi
+}
+
+validate_env_secrets() {
+  local key
+
+  for key in MONGO_ROOT_USER MONGO_ROOT_PASSWORD MONGO_APP_USER MONGO_APP_PASSWORD \
+             MEILI_MASTER_KEY JWT_SECRET JWT_REFRESH_SECRET \
+             POSTGRES_DB POSTGRES_USER POSTGRES_PASSWORD; do
+    require_env_secret "${key}"
+  done
+
+  if [[ "${ENABLE_CODE_INTERPRETER:-0}" == "1" ]]; then
+    for key in LIBRECHAT_CODE_API_KEY CODE_INTERPRETER_MINIO_ACCESS_KEY CODE_INTERPRETER_MINIO_SECRET_KEY; do
+      require_env_secret "${key}"
+    done
+  fi
+
+  if [[ "${ENABLE_LOCAL_SEARCH:-0}" == "1" ]]; then
+    for key in SEARXNG_API_KEY SEARXNG_SECRET FIRECRAWL_BULL_AUTH_KEY; do
+      require_env_secret "${key}"
+    done
+  fi
+}
+
 copy_required() {
   local source="$1"
   local target="$2"
@@ -75,13 +116,17 @@ main() {
     exit 1
   fi
 
+  validate_env_secrets
+
   mkdir -p "${SECRETS_DIR}"
   chmod u+w "${SECRETS_DIR}"/runtime-mongo-*.txt 2>/dev/null || true
   write_runtime_secret MONGO_ROOT_USER "${SECRETS_DIR}/runtime-mongo-root-user.txt"
   write_runtime_secret MONGO_ROOT_PASSWORD "${SECRETS_DIR}/runtime-mongo-root-password.txt"
   write_runtime_secret MONGO_APP_USER "${SECRETS_DIR}/runtime-mongo-app-user.txt"
   write_runtime_secret MONGO_APP_PASSWORD "${SECRETS_DIR}/runtime-mongo-app-password.txt"
-  chmod 444 "${SECRETS_DIR}"/runtime-mongo-*.txt || true
+  # Host-side copies stay owner-only; the in-volume copies are docker-cp'd and
+  # re-moded below, so containers never read these host files directly.
+  chmod 400 "${SECRETS_DIR}"/runtime-mongo-*.txt || true
 
   docker volume create "${VOLUME_NAME}" >/dev/null
   cleanup

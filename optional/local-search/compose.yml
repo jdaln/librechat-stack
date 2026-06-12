@@ -70,7 +70,7 @@ services:
       NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
       no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
       SEARXNG_INSTANCE_URL: ${SEARXNG_INSTANCE_URL_INTERNAL:-http://searxng-auth:8080}
-      SEARXNG_API_KEY: ${SEARXNG_API_KEY:-change-me-searxng-api-key}
+      SEARXNG_API_KEY: ${SEARXNG_API_KEY:?set SEARXNG_API_KEY in .env}
       LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-3}
       LIBRECHAT_WEB_SEARCH_MAX_SOURCES: ${LIBRECHAT_WEB_SEARCH_MAX_SOURCES:-2}
       LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT:-2}
@@ -100,7 +100,7 @@ services:
       SEARXNG_BIND_ADDRESS: 0.0.0.0
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080/}
       SEARXNG_LIMITER: "true"
-      SEARXNG_SECRET: ${SEARXNG_SECRET:-change-me-search-secret}
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}
       HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
@@ -132,7 +132,7 @@ services:
     restart: always
     command: ["caddy", "run", "--config", "/run/secrets/searxng_auth_caddyfile", "--adapter", "caddyfile"]
     environment:
-      SEARXNG_API_KEY: ${SEARXNG_API_KEY:-change-me-searxng-api-key}
+      SEARXNG_API_KEY: ${SEARXNG_API_KEY:?set SEARXNG_API_KEY in .env}
     depends_on:
       searxng:
         condition: service_started
@@ -235,7 +235,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
-      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:-change-me-firecrawl-bull-auth}
+      BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:?set FIRECRAWL_BULL_AUTH_KEY in .env}
       MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-1}
       NUM_WORKERS_PER_QUEUE: ${FIRECRAWL_NUM_WORKERS_PER_QUEUE:-1}
       CRAWL_CONCURRENT_REQUESTS: ${FIRECRAWL_CRAWL_CONCURRENT_REQUESTS:-2}
@@ -414,8 +414,8 @@ services:
     mem_limit: "1g"
     cpus: "1.0"
     restart: always
-    env_file:
-      - .env
+    # No env_file: a third-party image only needs the variables listed below,
+    # not the full .env secret set.
     environment:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8000

@@ -207,60 +207,18 @@ ensure_secret_permissions() {
     exit 1
   fi
 
-  local -r secrets_dir="${PROJECT_ROOT}/secrets"
   local gcp_sa="${PROJECT_ROOT}/secrets/gcp-sa.json"
-  local env_file="${PROJECT_ROOT}/.env"
-
-  read_env_var() {
-    local key="$1"
-    awk -F= -v k="${key}" '$1 == k { sub(/^[^=]*=/, ""); print; exit }' "${env_file}"
-  }
-
-  mkdir -p "${secrets_dir}"
-  chmod u+w "${secrets_dir}"/runtime-mongo-*.txt 2>/dev/null || true
-
-  local mongo_root_user mongo_root_password mongo_app_user mongo_app_password
-  local code_minio_user code_minio_password searx_api_key
-  mongo_root_user="$(read_env_var MONGO_ROOT_USER)"
-  mongo_root_password="$(read_env_var MONGO_ROOT_PASSWORD)"
-  mongo_app_user="$(read_env_var MONGO_APP_USER)"
-  mongo_app_password="$(read_env_var MONGO_APP_PASSWORD)"
-  code_minio_user="$(read_env_var CODE_INTERPRETER_MINIO_ACCESS_KEY)"
-  code_minio_password="$(read_env_var CODE_INTERPRETER_MINIO_SECRET_KEY)"
-  searx_api_key="$(read_env_var SEARXNG_API_KEY)"
-
-  if [[ -z "${mongo_root_user}" || -z "${mongo_root_password}" || -z "${mongo_app_user}" || -z "${mongo_app_password}" ]]; then
-    echo "ERROR: missing one or more Mongo credentials in .env (MONGO_ROOT_USER, MONGO_ROOT_PASSWORD, MONGO_APP_USER, MONGO_APP_PASSWORD)" >&2
-    exit 1
-  fi
-
-  printf '%s' "${mongo_root_user}" > "${secrets_dir}/runtime-mongo-root-user.txt"
-  printf '%s' "${mongo_root_password}" > "${secrets_dir}/runtime-mongo-root-password.txt"
-  printf '%s' "${mongo_app_user}" > "${secrets_dir}/runtime-mongo-app-user.txt"
-  printf '%s' "${mongo_app_password}" > "${secrets_dir}/runtime-mongo-app-password.txt"
-
-  chmod 600 "${secrets_dir}/runtime-mongo-root-user.txt" \
-            "${secrets_dir}/runtime-mongo-root-password.txt" \
-            "${secrets_dir}/runtime-mongo-app-user.txt" \
-            "${secrets_dir}/runtime-mongo-app-password.txt" || true
-
   if [[ -f "${gcp_sa}" ]]; then
     chmod 600 "${gcp_sa}" || true
   fi
 
-  if [[ "${ENABLE_CODE_INTERPRETER}" == "1" ]]; then
-    if [[ "${code_minio_user}" == "minioadmin" || "${code_minio_password}" == "minioadmin" ]]; then
-      log "WARNING: code interpreter MinIO credentials are using insecure defaults (minioadmin/minioadmin)"
-    fi
-  fi
-
-  if [[ "${ENABLE_LOCAL_SEARCH}" == "1" ]]; then
-    if [[ -z "${searx_api_key}" || "${searx_api_key}" == "24389_CHANGE_ME" || "${searx_api_key}" == "change-me-searxng-api-key" ]]; then
-      log "WARNING: SEARXNG_API_KEY is unset or placeholder; set a strong value in .env"
-    fi
-  fi
-
-  "${SCRIPT_DIR}/populate_stack_secrets_volume.sh"
+  # .env parsing, placeholder validation, and runtime secret file writing live
+  # in populate_stack_secrets_volume.sh (single owner). It fails hard when a
+  # required secret is missing or still a template placeholder; the ENABLE_*
+  # flags extend validation to the overlay secrets.
+  ENABLE_CODE_INTERPRETER="${ENABLE_CODE_INTERPRETER}" \
+  ENABLE_LOCAL_SEARCH="${ENABLE_LOCAL_SEARCH}" \
+    "${SCRIPT_DIR}/populate_stack_secrets_volume.sh"
 }
 
 main() {

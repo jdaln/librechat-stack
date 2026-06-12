@@ -89,10 +89,10 @@ prepare_runtime_secrets() {
   printf '%s' "$(read_env_var MONGO_ROOT_PASSWORD)" > "${secrets_dir}/runtime-mongo-root-password.txt"
   printf '%s' "$(read_env_var MONGO_APP_USER)" > "${secrets_dir}/runtime-mongo-app-user.txt"
   printf '%s' "$(read_env_var MONGO_APP_PASSWORD)" > "${secrets_dir}/runtime-mongo-app-password.txt"
-  # CI portability: mongo entrypoint re-execs as the "mongodb" user before reading
-  # *_FILE secrets. Keep runtime secret files read-only but world-readable so the
-  # in-container user can reliably read them across Docker/Compose variants.
-  chmod 444 "${secrets_dir}/runtime-mongo-root-user.txt" \
+  # Containers never read these host-side files: populate_stack_secrets_volume.sh
+  # docker-cp's them into the secrets volume and chmods the in-volume copies for
+  # the in-container users. Owner-only is enough (and safer) on the host.
+  chmod 400 "${secrets_dir}/runtime-mongo-root-user.txt" \
             "${secrets_dir}/runtime-mongo-root-password.txt" \
             "${secrets_dir}/runtime-mongo-app-user.txt" \
             "${secrets_dir}/runtime-mongo-app-password.txt" || true
