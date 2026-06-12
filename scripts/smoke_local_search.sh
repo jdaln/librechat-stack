@@ -27,11 +27,34 @@ for attempt in $(seq 1 60); do
 done
 
 echo "Checking LibreChat config endpoint: ${CONFIG_URL}"
+# interface/webSearch are only exposed to authenticated requests, so provision
+# a throwaway user through the app CLI and log in for a bearer token.
+SMOKE_CFG_SUFFIX="$(date +%s)"
+CONFIG_TOKEN="$(
+  docker exec \
+    -e SUFFIX="${SMOKE_CFG_SUFFIX}" \
+    -e HTTP_PROXY= \
+    -e HTTPS_PROXY= \
+    -e http_proxy= \
+    -e https_proxy= \
+    LibreChat sh -ec '
+      EMAIL="search-smoke-${SUFFIX}@example.test"
+      PASS="$(head -c 18 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 20)aA1"
+      node /app/config/create-user.js "${EMAIL}" "Search Smoke" "search-smoke-${SUFFIX}" "${PASS}" --email-verified=true >/dev/null 2>&1 || true
+      curl -sS --max-time 30 -H "content-type: application/json" \
+        --data "{\"email\":\"${EMAIL}\",\"password\":\"${PASS}\"}" \
+        http://127.0.0.1:3080/api/auth/login | sed -n "s/.*\"token\":\"\([^\"]*\)\".*/\1/p"
+    '
+)"
+if [[ -z "${CONFIG_TOKEN}" ]]; then
+  echo "Failed to obtain an auth token for the web search config check" >&2
+  exit 1
+fi
 for attempt in $(seq 1 60); do
-  if CONFIG_JSON="$(curl -fsS --max-time 10 "${CONFIG_URL}" 2>/dev/null)"; then
+  if CONFIG_JSON="$(curl -fsS --max-time 10 -H "Authorization: Bearer ${CONFIG_TOKEN}" "${CONFIG_URL}" 2>/dev/null)"; then
     break
   fi
-  if CONFIG_JSON="$(docker exec api-proxy curl -fsS --max-time 10 http://127.0.0.1/api/config 2>/dev/null)"; then
+  if CONFIG_JSON="$(docker exec api-proxy curl -fsS --max-time 10 -H "Authorization: Bearer ${CONFIG_TOKEN}" http://127.0.0.1/api/config 2>/dev/null)"; then
     break
   fi
   if [[ "${attempt}" == "60" ]]; then
