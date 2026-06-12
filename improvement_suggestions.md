@@ -3,6 +3,13 @@
 Full project review, 2026-06-12. Scope: root compose files, hardening overlay, `optional/` overlays,
 `scripts/` (start, secrets, prepare, smoke), `.github/workflows/`, `renovate.json`, backup tooling, docs.
 
+> **Status (2026-06-12): all findings below have been implemented and verified** on a live stack
+> (commits `7459575..3f81882` on `dev`). Notable deltas discovered during implementation:
+> the code interpreter additionally needs `SETPCAP` (nsjail child capability drop); squid cannot
+> write to `/dev/stdout` after dropping privileges, so the audit log reaches `docker logs` via an
+> entrypoint-owned fifo; and the web-search config assertion requires an authenticated
+> `/api/config` request. This document is kept as the review record.
+
 Findings are grouped by theme and tagged **[HIGH]** / **[MED]** by value (impact × likelihood, weighted by
 how cheap the fix is). A suggested execution order is at the end.
 
