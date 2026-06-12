@@ -253,12 +253,14 @@ services:
       code-interpreter-minio:
         condition: service_healthy
     restart: "no"
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://code-interpreter-minio:9000 $${CODE_INTERPRETER_MINIO_ACCESS_KEY:-change-me-minio-user} $${CODE_INTERPRETER_MINIO_SECRET_KEY:-change-me-minio-password};
-      mc mb --ignore-existing local/$${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files};
-      exit 0;
-      "
+    # -e so a failed alias/bucket step fails the container and the
+    # service_completed_successfully gate on code-interpreter-api holds.
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        mc alias set local http://code-interpreter-minio:9000 "$${CODE_INTERPRETER_MINIO_ACCESS_KEY}" "$${CODE_INTERPRETER_MINIO_SECRET_KEY}"
+        mc mb --ignore-existing "local/$${CODE_INTERPRETER_MINIO_BUCKET}"
     environment:
       CODE_INTERPRETER_MINIO_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:-change-me-minio-user}
       CODE_INTERPRETER_MINIO_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:-change-me-minio-password}
