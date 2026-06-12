@@ -1,12 +1,30 @@
 # Backups and Restore
 
 This directory provides:
-- `backup_librechat.sh`: snapshots stack named volumes to tarballs.
+- `backup_librechat.sh`: snapshots stack named volumes.
 - `restore_librechat.sh`: restores a chosen snapshot (or latest per volume).
+
+How databases are captured:
+- **MongoDB and Postgres running** → consistent *logical dumps*
+  (`mongodump --archive --gzip`, `pg_dumpall`). Tarring a live WiredTiger or
+  Postgres data directory can produce snapshots that fail to restore, so the
+  script never does that.
+- **Stack stopped** → cold file-level tars (consistent by construction).
+- All other volumes (uploads, logs, app data) → file-level tars.
+
+Every artifact is integrity-checked after writing (`tar -tzf` / `gzip -t`)
+and gets a `.sha256` checksum file next to it.
 
 Backup layout:
 - `~/Backups/LibreChatBackups/volumes/<volume>/<volume>-YYYY-MM-DD_HH-MM-SS.tar.gz`
+- `.../mongo_data/mongo_data-<stamp>.mongodump.archive.gz` (live Mongo dump)
+- `.../pgdata2/pgdata2-<stamp>.pgdumpall.sql.gz` (live Postgres dump)
 - If you use Colima, keep `BACKUP_ROOT` under your home directory (`/Users/...`) so Docker bind-mounts are visible.
+
+> **Also back up `.env` and `secrets/` (encrypted, outside this tooling).**
+> Restored volumes are useless without the matching Mongo/Meili/JWT secrets:
+> the database credentials inside the volumes must match what the stack
+> passes at startup.
 
 ## Install scripts
 
@@ -105,6 +123,15 @@ Or restore a specific timestamp (example):
 ```bash
 ~/.local/bin/restore_librechat.sh --snapshot 2026-03-06_03-15-00 --yes
 ```
+
+> Logical database dumps are restored by temporarily starting only the
+> matching database service, so the script needs the stack checkout
+> (`STACK_DIR`, defaults to the repo this script lives in; set it explicitly
+> when running the copy installed in `~/.local/bin`):
+>
+> ```bash
+> STACK_DIR=/path/to/librechat-stack ~/.local/bin/restore_librechat.sh --yes
+> ```
 
 4. Start stack again:
 
