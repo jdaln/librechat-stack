@@ -148,92 +148,25 @@
     },
     {
       "customType": "regex",
-      "description": "Track SEARXNG_IMAGE in template_dot_env",
+      "description": "Track upstream docker image pins (NAME=repo:tag@digest) in template_dot_env",
       "fileMatch": [
         "/^template_dot_env$/"
       ],
       "matchStrings": [
-        "SEARXNG_IMAGE=(?<currentValue>[^\\s]+)"
+        "(?:SEARXNG_IMAGE|SEARXNG_VALKEY_IMAGE|FIRECRAWL_IMAGE|FIRECRAWL_PLAYWRIGHT_IMAGE|FIRECRAWL_POSTGRES_BASE_IMAGE|FIRECRAWL_POSTGRES_SCHEMA_IMAGE|FIRECRAWL_REDIS_IMAGE|FIRECRAWL_RABBITMQ_IMAGE)=(?<depName>[a-z0-9][a-z0-9.\\-/]*):(?<currentValue>[a-zA-Z0-9][\\w.\\-]*?)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?\\n"
       ],
-      "depNameTemplate": "searxng/searxng",
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
     },
     {
       "customType": "regex",
-      "description": "Track SEARXNG_VALKEY_IMAGE in template_dot_env",
+      "description": "Track digest-pinned image build args in docker-compose.yml",
       "fileMatch": [
-        "/^template_dot_env$/"
+        "/^docker-compose\\.yml$/"
       ],
       "matchStrings": [
-        "SEARXNG_VALKEY_IMAGE=(?<currentValue>[^\\s]+)"
+        "(?:EGRESS_PROXY_IMAGE: \\$\\{EGRESS_PROXY_IMAGE:-|LIBRECHAT_IMAGE: )(?<depName>[a-z0-9][a-z0-9.\\-/]*):(?<currentValue>[a-zA-Z0-9][\\w.\\-]*?)(?:@(?<currentDigest>sha256:[a-f0-9]{64}))?[\\}\\n]"
       ],
-      "depNameTemplate": "valkey/valkey",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Track FIRECRAWL_IMAGE in template_dot_env",
-      "fileMatch": [
-        "/^template_dot_env$/"
-      ],
-      "matchStrings": [
-        "FIRECRAWL_IMAGE=(?<currentValue>[^\\s]+)"
-      ],
-      "depNameTemplate": "ghcr.io/firecrawl/firecrawl",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Track FIRECRAWL_PLAYWRIGHT_IMAGE in template_dot_env",
-      "fileMatch": [
-        "/^template_dot_env$/"
-      ],
-      "matchStrings": [
-        "FIRECRAWL_PLAYWRIGHT_IMAGE=(?<currentValue>[^\\s]+)"
-      ],
-      "depNameTemplate": "ghcr.io/firecrawl/playwright-service",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Track FIRECRAWL_POSTGRES_IMAGE in template_dot_env",
-      "fileMatch": [
-        "/^template_dot_env$/"
-      ],
-      "matchStrings": [
-        "FIRECRAWL_POSTGRES_IMAGE=(?<currentValue>[^\\s]+)"
-      ],
-      "depNameTemplate": "ghcr.io/firecrawl/nuq-postgres",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Track FIRECRAWL_REDIS_IMAGE in template_dot_env",
-      "fileMatch": [
-        "/^template_dot_env$/"
-      ],
-      "matchStrings": [
-        "FIRECRAWL_REDIS_IMAGE=(?<currentValue>[^\\s]+)"
-      ],
-      "depNameTemplate": "redis",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "docker"
-    },
-    {
-      "customType": "regex",
-      "description": "Track FIRECRAWL_RABBITMQ_IMAGE in template_dot_env",
-      "fileMatch": [
-        "/^template_dot_env$/"
-      ],
-      "matchStrings": [
-        "FIRECRAWL_RABBITMQ_IMAGE=(?<currentValue>[^\\s]+)"
-      ],
-      "depNameTemplate": "rabbitmq",
       "datasourceTemplate": "docker",
       "versioningTemplate": "docker"
     }
