@@ -41,6 +41,8 @@ Open the app at `http://localhost:3081` (through `api-proxy`).
 > Every `docker compose` invocation below assumes the same base flags
 > (`--env-file .env -f docker-compose.yml -f compose.hardening.yml`)
 > plus any optional `-f` overlays. The helper script handles this for you.
+> Treat `compose.hardening.yml` as required, not optional — the overlay
+> stacks assume the core services run hardened.
 
 After the stack is up, create the first admin user:
 
@@ -289,11 +291,11 @@ HF_HUB_DISABLE_TELEMETRY=1
 ```bash
 docker ps --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 docker logs -f --tail=200 LibreChat
-docker logs -f --tail=200 egress-proxy
 
-# Squid logs all local-search egress (auditable) plus denied requests elsewhere.
+# Squid logs all local-search egress (auditable) plus denied requests elsewhere
+# to stdout, so it lands in `docker logs` with the standard rotation.
 # Look for TCP_DENIED/403 when debugging allowlist misses.
-docker exec -u proxy egress-proxy sh -lc 'tail -f /var/log/squid/access.log'
+docker logs -f --tail=200 egress-proxy
 ```
 
 ---

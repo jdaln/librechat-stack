@@ -42,6 +42,10 @@ prepare_build_dir() {
   if ! docker buildx version >/dev/null 2>&1; then
     log "buildx not available; stripping BuildKit cache mounts from upstream Dockerfile"
     perl -0pi -e 's/^RUN\s+--mount=type=cache,target=[^[:space:]\\\\]+\s+/RUN /mg' "${BUILD_DIR}/Dockerfile"
+    if grep -q -- '--mount=type=cache' "${BUILD_DIR}/Dockerfile"; then
+      echo "ERROR: cache-mount strip left unhandled --mount directives in the upstream Dockerfile; review the patch before bumping CODE_INTERPRETER_GIT_REF" >&2
+      exit 1
+    fi
   fi
 }
 

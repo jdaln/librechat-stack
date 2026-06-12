@@ -1,3 +1,8 @@
+# NOTE: the api container reads this file from the stack secrets volume, not
+# from the repo. After editing, re-run scripts/populate_stack_secrets_volume.sh
+# (or scripts/start_stack.sh) and restart the api container to apply changes.
+# template_librechat.yaml is the fuller reference (includes the Vertex/google
+# preset); keep intentional differences between the two minimal.
 version: 1.3.3
 cache: true
 fileStrategy: "local"

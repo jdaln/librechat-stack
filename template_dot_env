@@ -70,6 +70,8 @@ MONGO_ROOT_PASSWORD=24389_CHANGE_ME
 
 # Credentials for the application user. LibreChat uses this user to
 # connect to and interact with the database.
+# Keep MONGO_APP_USER/MONGO_APP_PASSWORD URL-safe (alphanumeric is simplest):
+# they are embedded unescaped in the MONGO_URI connection string.
 MONGO_APP_USER=24389_CHANGE_ME
 MONGO_APP_PASSWORD=24389_CHANGE_ME
 

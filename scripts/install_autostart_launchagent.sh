@@ -32,7 +32,7 @@ cat > "${PLIST_PATH}" <<EOF
   <array>
     <string>/bin/zsh</string>
     <string>-lc</string>
-    <string>${PROJECT_ROOT}/scripts/start_stack.sh</string>
+    <string>if [ -f "${LOG_PATH}" ]; then tail -c 1048576 "${LOG_PATH}" > "${LOG_PATH}.tmp" 2>/dev/null; mv -f "${LOG_PATH}.tmp" "${LOG_PATH}"; fi; exec "${PROJECT_ROOT}/scripts/start_stack.sh"</string>
   </array>
 
   <key>RunAtLoad</key>

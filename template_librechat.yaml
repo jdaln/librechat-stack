@@ -1,3 +1,7 @@
+# Reference template for librechat.yaml (superset: includes the Vertex/google
+# preset). The live file is served to the api container from the stack secrets
+# volume - after editing librechat.yaml, re-run the populate script and restart
+# the api container.
 version: 1.3.3
 cache: true
 fileStrategy: "local"

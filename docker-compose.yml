@@ -77,6 +77,16 @@ x-json-logging: &json_logging
     max-size: "${DOCKER_LOG_MAX_SIZE:-10m}"
     max-file: "${DOCKER_LOG_MAX_FILE:-3}"
 
+# Egress-proxy wiring shared by api and rag_api (overlays may override NO_PROXY).
+x-proxy-env: &proxy_env
+  EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+  HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+  HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+  http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+  https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
+  no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
+
 services:
   # ──────────────────────────────────────────────────────────────────────────────
   # Egress proxy (the only service with outbound Internet for API/RAG)
@@ -169,6 +179,7 @@ services:
     env_file:
       - .env
     environment:
+      <<: *proxy_env
       HOST: 0.0.0.0
       # MONGO_URI: mongodb://mongodb:27017/LibreChat
       MEILI_HOST: http://meilisearch:7700
@@ -180,16 +191,9 @@ services:
       # Static preview uses id-prefixed hostnames (id-<host>). Use a *.localhost
       # host so id-prefixed variants resolve on loopback and stay SW-secure on HTTP.
       SANDPACK_STATIC_BUNDLER_URL: ${SANDPACK_STATIC_BUNDLER_URL:-http://preview.localhost:4324}
-      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
       NODE_PATH: /app/node_modules
       NODE_OPTIONS: --require /run/secrets/undici_proxy_bootstrap.cjs
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
       CONFIG_PATH: /run/secrets/librechat_yaml
       MONGO_URI: mongodb://${MONGO_APP_USER}:${MONGO_APP_PASSWORD}@mongodb:27017/LibreChat?authSource=LibreChat
       # env_file injects all of .env for app configuration; blank the
@@ -413,6 +417,7 @@ services:
     # .env (Mongo credentials, Meili master key, provider keys, ...). If you
     # switch EMBEDDINGS_PROVIDER, add that provider's key here explicitly.
     environment:
+      <<: *proxy_env
       # DEBUG_RAG_API: "True"
       RAG_HOST: 0.0.0.0
       DB_HOST: vectordb
@@ -430,13 +435,6 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
-      EGRESS_PROXY_URL: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      HTTP_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      HTTPS_PROXY: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      http_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      https_proxy: ${EGRESS_PROXY_URL:-http://egress-proxy:3128}
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy}
     networks: 
       - lan
     restart: always

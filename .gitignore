@@ -1,8 +1,7 @@
 .env
-secrets/*.json
-secrets/*.crt
-secrets/*.key
-secrets/runtime-*.txt
+# Ignore the whole secrets directory: an extension allowlist would let a stray
+# gcp-sa.json.bak or notes.txt slip into git.
+secrets/
 *.log
 ci_artifacts/
 .DS_Store

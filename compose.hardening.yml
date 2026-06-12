@@ -24,12 +24,13 @@ services:
       - SETGID
       - SETUID
       - NET_BIND_SERVICE
-    # Squid writes pid/cache/log files; keep them on tmpfs with a read-only rootfs.
+    # Squid writes pid/cache files; keep them on tmpfs with a read-only rootfs.
+    # Access logs go to stdout (see squid.conf), so /var/log/squid stays small.
     tmpfs:
       - "/tmp:size=256m"
       - "/run:size=64m"
       - "/var/spool/squid:rw,size=128m,uid=13,gid=13,mode=0775"
-      - "/var/log/squid:rw,size=64m,uid=13,gid=13,mode=0775"
+      - "/var/log/squid:rw,size=16m,uid=13,gid=13,mode=0775"
 
   api-proxy:
     <<: *harden

@@ -14,3 +14,9 @@ RUN awk '\
   { print }' \
   /docker-entrypoint-initdb.d/010-nuq.sql > /tmp/010-nuq.sql \
   && mv /tmp/010-nuq.sql /docker-entrypoint-initdb.d/010-nuq.sql
+
+# Post-conditions: the patched init script must be non-empty and free of
+# functional pg_cron references (comments are fine), or first boot would
+# abort on the missing extension.
+RUN test -s /docker-entrypoint-initdb.d/010-nuq.sql \
+  && ! grep -Ev '^[[:space:]]*--' /docker-entrypoint-initdb.d/010-nuq.sql | grep -Eq 'pg_cron|cron[.]schedule'

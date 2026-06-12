@@ -41,7 +41,11 @@ prepare_build_dir() {
 
   # LibreChat's Jina client does not send batch_size, so keep it optional in the
   # upstream compatibility layer before building the image.
-  perl -0pi -e 's/batch_size: int/batch_size: int = 8/' "${BUILD_DIR}/models.py"
+  perl -0pi -e 's/batch_size: int(?! =)/batch_size: int = 8/' "${BUILD_DIR}/models.py"
+  if ! grep -q 'batch_size: int = 8' "${BUILD_DIR}/models.py"; then
+    echo "ERROR: batch_size compatibility patch no longer applies to models.py; upstream layout changed - review the patch before bumping JINA_RERANKER_GIT_REF" >&2
+    exit 1
+  fi
 
   # Preload the model files without instantiating onnxruntime during the image
   # build. TextCrossEncoder initialization can crash under Linux ARM builders
@@ -54,6 +58,10 @@ prepare_build_dir() {
     { print }
   ' "${BUILD_DIR}/Dockerfile" > "${BUILD_DIR}/Dockerfile.tmp"
   mv "${BUILD_DIR}/Dockerfile.tmp" "${BUILD_DIR}/Dockerfile"
+  if ! grep -q 'snapshot_download' "${BUILD_DIR}/Dockerfile"; then
+    echo "ERROR: model preload rewrite no longer applies to the upstream Dockerfile; review the awk patch before bumping JINA_RERANKER_GIT_REF" >&2
+    exit 1
+  fi
 }
 
 build_image() {
