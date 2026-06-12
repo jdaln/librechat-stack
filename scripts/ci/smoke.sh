@@ -171,23 +171,6 @@ sys.exit(completed.returncode)
 ' "${timeout_seconds}" "$@"
 }
 
-run_with_stdin_timeout() {
-  local timeout_seconds="$1"
-  shift
-  local stdin_file rc
-
-  stdin_file="$(mktemp)"
-  cat >"${stdin_file}"
-
-  set +e
-  run_with_timeout "${timeout_seconds}" "$@" <"${stdin_file}"
-  rc="$?"
-  set -e
-
-  rm -f "${stdin_file}"
-  return "${rc}"
-}
-
 start_container() {
   local container="$1"
   local attempts="${SMOKE_DOCKER_START_ATTEMPTS:-4}"
@@ -197,8 +180,9 @@ start_container() {
   for ((i = 1; i <= attempts; i++)); do
     if run_with_timeout "${SMOKE_DOCKER_START_TIMEOUT:-300}" docker start "${container}"; then
       return 0
+    else
+      rc="$?"
     fi
-    rc="$?"
 
     if docker inspect "${container}" --format '{{.State.Running}}' 2>/dev/null | grep -qx true; then
       return 0
@@ -234,8 +218,9 @@ compose_with_retry() {
   for ((i = 1; i <= attempts; i++)); do
     if compose_with_optional_timeout "${timeout_seconds}" "$@"; then
       return 0
+    else
+      rc="$?"
     fi
-    rc="$?"
 
     if ((i < attempts)); then
       log "compose command failed on attempt ${i}/${attempts}; retrying in ${delay}s"
@@ -1049,31 +1034,58 @@ log "Waiting for Firecrawl API inside the stack"
 wait_internal_http "${FIRECRAWL_API_URL:-http://firecrawl-api:3002}"
 
 log "Checking allowlisted egress policy"
-set +e
-allowed_result="$(
-  run_with_timeout "${SMOKE_INTERNAL_HTTP_PROBE_TIMEOUT:-90}" docker exec LibreChat sh -ec '
-    connect_status() {
-      local host="$1" status
-      status="$(printf "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n" "${host}" "${host}" | nc -w 20 egress-proxy 3128 | sed -n "1p")"
-      printf "%s\n" "${status}"
-    }
+# The deny half only needs Squid's ACL evaluation, so it is a hard assertion.
+# The allow half depends on opencode.ai being reachable from CI; retry it and
+# degrade to a warning when the upstream is unavailable (Squid 403 still fails).
+egress_allowed_ok=false
+egress_blocked_ok=false
+for attempt in $(seq 1 "${SMOKE_EGRESS_POLICY_ATTEMPTS:-6}"); do
+  set +e
+  egress_result="$(
+    run_with_timeout "${SMOKE_INTERNAL_HTTP_PROBE_TIMEOUT:-90}" docker exec LibreChat sh -ec '
+      connect_status() {
+        local host="$1" status
+        status="$(printf "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n" "${host}" "${host}" | nc -w 20 egress-proxy 3128 | sed -n "1p")"
+        printf "%s\n" "${status}"
+      }
 
-    allowed="$(connect_status opencode.ai)"
-    blocked="$(connect_status example.com)"
-    ok=false
-    case "${allowed}" in *" 200 "*) case "${blocked}" in *" 200 "*) ok=false ;; *) ok=true ;; esac ;; esac
-    printf "{\"ok\":%s,\"allowed\":\"%s\",\"blocked\":\"%s\"}\n" "${ok}" "${allowed}" "${blocked}"
-    [ "${ok}" = "true" ]
-  ' 2>&1
-)"
-allowed_rc=$?
-set -e
-printf '%s\n' "${allowed_result}"
-if [[ "${allowed_rc}" -ne 0 ]]; then
-  echo "Allowlisted egress policy check failed" >&2
+      allowed="$(connect_status opencode.ai)"
+      blocked="$(connect_status example.com)"
+      printf "{\"allowed\":\"%s\",\"blocked\":\"%s\"}\n" "${allowed}" "${blocked}"
+    ' 2>&1
+  )"
+  egress_rc=$?
+  set -e
+  printf '%s\n' "${egress_result}"
+
+  if [[ "${egress_rc}" -eq 0 ]]; then
+    if grep -Eq '"blocked":"HTTP/[^"]* 200 ' <<<"${egress_result}"; then
+      echo "Egress proxy allowed CONNECT to example.com; the allowlist is not enforced" >&2
+      exit 1
+    fi
+    if grep -Eq '"blocked":"HTTP/[^"]* 403' <<<"${egress_result}"; then
+      egress_blocked_ok=true
+    fi
+    if grep -Eq '"allowed":"HTTP/[^"]* 403' <<<"${egress_result}"; then
+      echo "Egress proxy denied CONNECT to allowlisted opencode.ai; allowlist is misconfigured" >&2
+      exit 1
+    fi
+    if grep -Eq '"allowed":"HTTP/[^"]* 200 ' <<<"${egress_result}"; then
+      egress_allowed_ok=true
+    fi
+    if [[ "${egress_blocked_ok}" == true && "${egress_allowed_ok}" == true ]]; then
+      break
+    fi
+  fi
+  sleep 5
+done
+if [[ "${egress_blocked_ok}" != true ]]; then
+  echo "Egress proxy never returned 403 for a disallowed domain (proxy unreachable or misconfigured)" >&2
   exit 1
 fi
-grep -q '"ok":true' <<<"${allowed_result}"
+if [[ "${egress_allowed_ok}" != true ]]; then
+  echo "Warning: allowlisted CONNECT to opencode.ai did not succeed after retries (likely external availability); deny policy was verified." >&2
+fi
 
 log "Checking local-search proxy blocks private destinations"
 set +e
