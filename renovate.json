@@ -160,6 +160,20 @@
     },
     {
       "customType": "regex",
+      "description": "Track STATIC_SERVER_REF in the static-preview Dockerfile against main branch head",
+      "fileMatch": [
+        "/^optional\\/static-preview\\/Dockerfile\\.sandpack-static$/"
+      ],
+      "matchStrings": [
+        "ARG STATIC_SERVER_REF=(?<currentDigest>[a-f0-9]{40})"
+      ],
+      "currentValueTemplate": "main",
+      "depNameTemplate": "LibreChat-AI/static-browser-server",
+      "packageNameTemplate": "https://github.com/LibreChat-AI/static-browser-server",
+      "datasourceTemplate": "git-refs"
+    },
+    {
+      "customType": "regex",
       "description": "Track the code interpreter image pin in the smoke workflow CI env",
       "fileMatch": [
         "/^\\.github\\/workflows\\/stack-smoke\\.yml$/"

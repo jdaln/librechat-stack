@@ -1,4 +1,6 @@
-ARG EGRESS_PROXY_IMAGE=ubuntu/squid:latest
+# Default matches the digest-pinned compose build arg so bare `docker build`
+# is reproducible too.
+ARG EGRESS_PROXY_IMAGE=ubuntu/squid:latest@sha256:6a097f68bae708cedbabd6188d68c7e2e7a38cedd05a176e1cc0ba29e3bbe029
 
 FROM ${EGRESS_PROXY_IMAGE}
 

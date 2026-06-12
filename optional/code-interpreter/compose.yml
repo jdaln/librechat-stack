@@ -48,7 +48,7 @@ services:
 
   code-interpreter-proxy:
     <<: *harden
-    image: caddy:2.11.3-alpine
+    image: caddy:2.11.3-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
     container_name: code-interpreter-proxy
     restart: always
     cap_add:
@@ -195,7 +195,7 @@ services:
     logging: *json_logging
 
   code-interpreter-redis:
-    image: redis:8.6.3-alpine
+    image: redis:8.6.3-alpine@sha256:d146f83b1e0f02fc27c26a50cee39338c736674c5959db84363e6ae3cd9e02d2
     container_name: code-interpreter-redis
     security_opt: ["no-new-privileges:true"]
     pids_limit: 256
@@ -228,7 +228,7 @@ services:
 
   code-interpreter-minio:
     <<: *harden
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     container_name: code-interpreter-minio
     mem_limit: "512m"
     cpus: "0.75"
@@ -256,7 +256,7 @@ services:
     logging: *json_logging
 
   code-interpreter-minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     container_name: code-interpreter-minio-init
     depends_on:
       code-interpreter-minio:

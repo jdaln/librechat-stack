@@ -1,10 +1,17 @@
 # ---- build ----
-FROM node:26.1.0-alpine AS build
+FROM node:26.1.0-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea AS build
 RUN apk add --no-cache git
 WORKDIR /app
 
-# Get the server
-RUN git clone --depth=1 https://github.com/LibreChat-AI/static-browser-server.git .
+# Pinned upstream commit (LibreChat-AI/static-browser-server, branch main).
+# Renovate tracks this against the branch head.
+ARG STATIC_SERVER_REF=30de7ae4ebf5433acc0fb640649fb77426a79e04
+
+# Fetch exactly the pinned commit (no moving branch HEAD).
+RUN git init . \
+  && git remote add origin https://github.com/LibreChat-AI/static-browser-server.git \
+  && git fetch --depth=1 origin "${STATIC_SERVER_REF}" \
+  && git checkout FETCH_HEAD
 
 # Use pnpm (repo uses it in scripts). Node 26 Alpine images do not ship corepack,
 # and pnpm 10 requires interactive build-script approval for esbuild here.
@@ -16,15 +23,16 @@ RUN pnpm run build
 RUN pnpm exec esbuild ./servers/demo-server.ts --bundle --platform=node --format=cjs --outfile=out/demo-server.cjs
 
 # ---- runtime ----
-FROM node:26.1.0-alpine
+FROM node:26.1.0-alpine@sha256:e71ac5e964b9201072425d59d2e876359efa25dc96bb1768cb73295728d6e4ea
 WORKDIR /app
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=4324
 EXPOSE 4324
 
-# Bring the whole app, built assets, and node_modules
-COPY --from=build /app /app
+# Only the built assets and the bundled server - not .git, sources, or
+# dev node_modules from the build stage.
+COPY --from=build /app/out /app/out
 
 # Run the precompiled Fastify server against the assets built above.
 CMD ["node", "./out/demo-server.cjs"]
