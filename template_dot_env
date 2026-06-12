@@ -194,6 +194,9 @@ SEARXNG_VALKEY_IMAGE=valkey/valkey:9.0.4-alpine
 
 FIRECRAWL_API_KEY=local-firecrawl
 FIRECRAWL_API_URL=http://firecrawl-api:3002
+# Internal Firecrawl Postgres password. Keep it URL-safe (alphanumeric);
+# it is embedded in connection URLs.
+FIRECRAWL_POSTGRES_PASSWORD=24389_CHANGE_ME
 FIRECRAWL_VERSION=v2
 FIRECRAWL_LOG_LEVEL=warn
 FIRECRAWL_HARNESS_STARTUP_TIMEOUT_MS=1200000

@@ -72,7 +72,7 @@ validate_env_secrets() {
   fi
 
   if [[ "${ENABLE_LOCAL_SEARCH:-0}" == "1" ]]; then
-    for key in SEARXNG_API_KEY SEARXNG_SECRET FIRECRAWL_BULL_AUTH_KEY; do
+    for key in SEARXNG_API_KEY SEARXNG_SECRET FIRECRAWL_BULL_AUTH_KEY FIRECRAWL_POSTGRES_PASSWORD; do
       require_env_secret "${key}"
     done
   fi

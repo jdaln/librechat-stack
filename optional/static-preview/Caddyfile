@@ -8,8 +8,9 @@
 :80 {
   # CORS for Sandpack relay from LibreChat UI (127.0.0.1:3080)
   header {
+    # The static preview server is read-only; no write methods.
     Access-Control-Allow-Origin  "*"
-    Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
+    Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Access-Control-Allow-Headers "*"
     Access-Control-Max-Age       "3600"
   }

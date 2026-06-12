@@ -128,8 +128,17 @@ services:
             time.sleep(2)
         PY
         exec python3 -m src.main
+    # This container executes untrusted LLM-generated code; keep it on the
+    # smallest capability set nsjail still works with instead of Docker's
+    # full default set. Verified against py/js execution and the generated-
+    # files path: SYS_ADMIN (namespaces/mounts), SETUID/SETGID (sandbox uid
+    # switch), SETPCAP (child capability drop).
+    cap_drop: ["ALL"]
     cap_add:
       - SYS_ADMIN
+      - SETUID
+      - SETGID
+      - SETPCAP
     security_opt:
       - no-new-privileges:true
       # Required for current LibreCodeInterpreter/nsjail runtime.

@@ -21,7 +21,27 @@ if [[ "${EGRESS_DNS_ENABLE:-0}" == "1" ]]; then
     [[ -n "${upstream}" ]] && dnsmasq_args+=(--server="${upstream}")
   done
 
+  # Supervise both processes: if either squid or dnsmasq dies, exit so Docker
+  # restarts the container. A fire-and-forget dnsmasq would silently take down
+  # DNS for every container pointing at it while squid keeps looking healthy.
   dnsmasq "${dnsmasq_args[@]}" &
+  dnsmasq_pid=$!
+
+  /usr/local/bin/entrypoint.sh "$@" &
+  squid_pid=$!
+
+  forward_term() {
+    kill -TERM "${squid_pid}" "${dnsmasq_pid}" 2>/dev/null || true
+  }
+  trap forward_term TERM INT
+
+  set +e
+  wait -n "${dnsmasq_pid}" "${squid_pid}"
+  rc=$?
+  set -e
+  forward_term
+  wait || true
+  exit "${rc}"
 fi
 
 exec /usr/local/bin/entrypoint.sh "$@"

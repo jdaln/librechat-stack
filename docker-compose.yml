@@ -102,6 +102,18 @@ services:
           subpath: egress-proxy
     restart: always
     logging: *json_logging
+    healthcheck:
+      # Squid must accept connections; when the local-search overlay enables
+      # the embedded dnsmasq resolver, its TCP listener must be up too.
+      test:
+        [
+          "CMD-SHELL",
+          "bash -ec 'exec 3<>/dev/tcp/127.0.0.1/3128 && if [ \"$${EGRESS_DNS_ENABLE:-0}\" = 1 ]; then exec 4<>/dev/tcp/$${EGRESS_DNS_LISTEN_ADDRESS:-127.0.0.1}/53; fi'"
+        ]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
 
   # ──────────────────────────────────────────────────────────────────────────────
   # Local API ingress proxy (host access without granting API direct WAN)
@@ -111,7 +123,7 @@ services:
     container_name: api-proxy
     depends_on:
       api:
-        condition: service_started
+        condition: service_healthy
       sandpack:
         condition: service_healthy
     command: ["caddy", "run", "--config", "/run/secrets/api_proxy_caddyfile", "--adapter", "caddyfile"]
@@ -149,7 +161,7 @@ services:
       rag_api:
         condition: service_healthy
       egress-proxy:
-        condition: service_started
+        condition: service_healthy
       # caddy:
       #   condition: service_started
       mongo-init:
@@ -207,6 +219,12 @@ services:
       - api_frontend
     restart: always
     logging: *json_logging
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS --max-time 10 http://127.0.0.1:3080/health >/dev/null"]
+      interval: 30s
+      timeout: 15s
+      retries: 10
+      start_period: 120s
     # If you KNOW an image is amd64-only on Apple Silicon, uncomment:
     # platform: linux/amd64
 
@@ -343,6 +361,12 @@ services:
     networks: [lan]
     restart: always
     logging: *json_logging
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "--max-time", "5", "http://127.0.0.1:7700/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     # platform: linux/amd64
 
   # ──────────────────────────────────────────────────────────────────────────────
@@ -384,7 +408,7 @@ services:
       vectordb:
         condition: service_healthy
       egress-proxy:
-        condition: service_started
+        condition: service_healthy
     # No env_file: the RAG API only needs the variables below, not the full
     # .env (Mongo credentials, Meili master key, provider keys, ...). If you
     # switch EMBEDDINGS_PROVIDER, add that provider's key here explicitly.

@@ -942,9 +942,21 @@ for container in \
 done
 
 log "Checking code interpreter capability set"
+ci_cap_drop="$(docker inspect code-interpreter-api --format '{{json .HostConfig.CapDrop}}')"
+if ! grep -Eq '"(CAP_)?ALL"' <<<"${ci_cap_drop}"; then
+  echo "code-interpreter-api must drop ALL capabilities; CapDrop: ${ci_cap_drop}" >&2
+  exit 1
+fi
 ci_cap_add="$(docker inspect code-interpreter-api --format '{{json .HostConfig.CapAdd}}')"
-if ! grep -Eq '^\["(CAP_)?SYS_ADMIN"\]$' <<<"${ci_cap_add}"; then
-  echo "Unexpected code-interpreter-api CapAdd: ${ci_cap_add}" >&2
+for required_cap in SYS_ADMIN SETUID SETGID SETPCAP; do
+  if ! grep -Eq "\"(CAP_)?${required_cap}\"" <<<"${ci_cap_add}"; then
+    echo "code-interpreter-api is missing expected capability ${required_cap}: ${ci_cap_add}" >&2
+    exit 1
+  fi
+done
+ci_cap_count="$(awk -F',' '{print NF}' <<<"${ci_cap_add}")"
+if [[ "${ci_cap_count}" -ne 4 ]]; then
+  echo "code-interpreter-api CapAdd grew beyond the verified minimal set: ${ci_cap_add}" >&2
   exit 1
 fi
 

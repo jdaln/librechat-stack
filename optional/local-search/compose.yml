@@ -87,6 +87,9 @@ services:
         SEARXNG_IMAGE: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:3eb2fcb2153e0b1f8e9f3457695ed3db1b1443d1dbc2b6d23121835d33fd50aa}
     image: librechat-stack/searxng-runtime:local
     container_name: searxng
+    # The service with the broadest outbound allowance gets a write-protected
+    # rootfs; its writable paths (cache volume, /tmp, /run) are all covered.
+    read_only: true
     cap_drop: ["ALL"]
     security_opt: ["no-new-privileges:true"]
     pids_limit: 256
@@ -119,6 +122,14 @@ services:
     depends_on:
       searxng-valkey:
         condition: service_healthy
+      egress-proxy:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- -T 5 http://127.0.0.1:8080/healthz >/dev/null 2>&1"]
+      interval: 15s
+      timeout: 10s
+      retries: 10
+      start_period: 60s
     logging: *json_logging
 
   searxng-auth:
@@ -135,7 +146,7 @@ services:
       SEARXNG_API_KEY: ${SEARXNG_API_KEY:?set SEARXNG_API_KEY in .env}
     depends_on:
       searxng:
-        condition: service_started
+        condition: service_healthy
     networks:
       - search_gateway
       - searx_internal
@@ -232,13 +243,15 @@ services:
       REDIS_URL: redis://firecrawl-redis:6379
       REDIS_RATE_LIMIT_URL: redis://firecrawl-redis:6379
       NUQ_RABBITMQ_URL: amqp://firecrawl-rabbitmq:5672
-      NUQ_DATABASE_URL: postgresql://postgres:postgres@firecrawl-postgres:5432/postgres
-      NUQ_DATABASE_URL_LISTEN: postgresql://postgres:postgres@firecrawl-postgres:5432/postgres
+      # Keep FIRECRAWL_POSTGRES_PASSWORD URL-safe (alphanumeric is simplest);
+      # it is embedded in the connection URLs below.
+      NUQ_DATABASE_URL: postgresql://postgres:${FIRECRAWL_POSTGRES_PASSWORD:?set FIRECRAWL_POSTGRES_PASSWORD in .env}@firecrawl-postgres:5432/postgres
+      NUQ_DATABASE_URL_LISTEN: postgresql://postgres:${FIRECRAWL_POSTGRES_PASSWORD}@firecrawl-postgres:5432/postgres
       POSTGRES_HOST: firecrawl-postgres
       POSTGRES_PORT: 5432
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD}
       PLAYWRIGHT_MICROSERVICE_URL: http://firecrawl-playwright:3000/scrape
       BULL_AUTH_KEY: ${FIRECRAWL_BULL_AUTH_KEY:?set FIRECRAWL_BULL_AUTH_KEY in .env}
       MAX_CONCURRENT_JOBS: ${FIRECRAWL_MAX_CONCURRENT_JOBS:-1}
@@ -268,7 +281,7 @@ services:
       SEARXNG_CATEGORIES: ""
     depends_on:
       egress-proxy:
-        condition: service_started
+        condition: service_healthy
       firecrawl-redis:
         condition: service_healthy
       firecrawl-rabbitmq:
@@ -332,7 +345,7 @@ services:
       - 172.31.33.2
     depends_on:
       egress-proxy:
-        condition: service_started
+        condition: service_healthy
     tmpfs:
       - "/tmp:size=1g"
       - "/run:size=128m"
@@ -351,10 +364,25 @@ services:
   firecrawl-redis:
     image: ${FIRECRAWL_REDIS_IMAGE:-redis:8.6.3-alpine@sha256:d146f83b1e0f02fc27c26a50cee39338c736674c5959db84363e6ae3cd9e02d2}
     container_name: firecrawl-redis
+    read_only: true
+    cap_drop: ["ALL"]
+    # Entrypoint drops from root to the redis user.
+    cap_add:
+      - SETGID
+      - SETUID
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    ulimits:
+      nofile: { soft: 1024, hard: 2048 }
+    mem_limit: "256m"
+    cpus: "0.5"
     restart: always
-    command: ["redis-server", "--bind", "0.0.0.0", "--loglevel", "warning"]
+    command: ["redis-server", "--bind", "0.0.0.0", "--loglevel", "warning", "--maxmemory", "192mb", "--maxmemory-policy", "noeviction"]
     volumes:
       - firecrawl_redis_data:/data
+    tmpfs:
+      - "/tmp:size=64m"
+      - "/run:size=16m"
     networks:
       - search
     healthcheck:
@@ -368,9 +396,27 @@ services:
   firecrawl-rabbitmq:
     image: ${FIRECRAWL_RABBITMQ_IMAGE:-rabbitmq:4.3.0-management@sha256:8f3ab1dc6fb3b17ff59ba4e9ceed187c1711a4af831242b733b1e6949625b315}
     container_name: firecrawl-rabbitmq
+    cap_drop: ["ALL"]
+    # Entrypoint chowns its data/config dirs and drops to the rabbitmq user.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    security_opt: ["no-new-privileges:true"]
+    # Erlang spawns many lightweight processes/threads.
+    pids_limit: 1024
+    mem_limit: "1g"
+    cpus: "1.0"
     restart: always
     environment:
       RABBITMQ_ERLANG_COOKIE: ${FIRECRAWL_RABBITMQ_ERLANG_COOKIE:-local-firecrawl-rabbit-cookie}
+    # Queue contents are transient crawl jobs; keep broker state on tmpfs so
+    # the writable container layer stays bounded.
+    tmpfs:
+      - "/var/lib/rabbitmq:size=256m"
+      - "/tmp:size=64m"
     networks:
       - search
     healthcheck:
@@ -390,13 +436,29 @@ services:
         FIRECRAWL_POSTGRES_SCHEMA_IMAGE: ${FIRECRAWL_POSTGRES_SCHEMA_IMAGE:-ghcr.io/firecrawl/nuq-postgres:latest@sha256:f9388bd25ae2e1f1d034518236f993ce236173c1d8800ce24092ea6643a95a33}
     image: librechat-stack/firecrawl-postgres-runtime:local
     container_name: firecrawl-postgres
+    read_only: true
+    cap_drop: ["ALL"]
+    security_opt: ["no-new-privileges:true"]
+    # Run directly as postgres (mirrors vectordb); the image data dir is
+    # postgres-owned so no root setup phase is needed.
+    user: "999:999"
+    pids_limit: 300
+    mem_limit: "1g"
+    cpus: "1.0"
     restart: always
     environment:
       POSTGRES_DB: postgres
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+      # NOTE for existing deployments: changing this does not rewrite an
+      # already-initialized volume; either reset firecrawl_postgres_data
+      # (transient crawl-queue data) or ALTER USER manually.
+      POSTGRES_PASSWORD: ${FIRECRAWL_POSTGRES_PASSWORD:?set FIRECRAWL_POSTGRES_PASSWORD in .env}
     volumes:
       - firecrawl_postgres_data:/var/lib/postgresql/data
+    tmpfs:
+      - "/tmp:size=128m"
+      - "/run:size=32m"
+      - "/var/run/postgresql:size=16m"
     networks:
       - search
     healthcheck:
