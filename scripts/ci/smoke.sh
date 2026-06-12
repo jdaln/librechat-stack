@@ -342,17 +342,26 @@ wait_http() {
   for ((i = 1; i <= attempts; i++)); do
     deadline_check || return 1
     if run_with_timeout "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" curl -fsS "$url" >/dev/null 2>&1; then
+      log "wait_http: ${url} reachable from the host"
       return 0
     fi
-    container_path="${url#"${INGRESS_URL}"}"
-    if [[ "${container_path}" != "${url}" ]] && run_with_timeout "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" docker exec api-proxy curl -fsS "http://127.0.0.1${container_path}" >/dev/null 2>&1; then
-      return 0
-    fi
-    static_path="${url#http://127.0.0.1:4324}"
-    if [[ "${static_path}" != "${url}" ]]; then
-      static_path="${static_path:-/}"
-      if run_with_timeout "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" docker exec caddy-static-proxy wget -qO- -T "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" "http://127.0.0.1${static_path}" >/dev/null 2>&1; then
+    # The in-container fallbacks exist for local Docker/Colima setups where
+    # the host cannot reach published ports. They must stay disabled in CI
+    # (SMOKE_REQUIRE_HOST_INGRESS=1): a broken host ingress would otherwise
+    # pass smoke even though the published ports carry no traffic.
+    if [[ "${SMOKE_REQUIRE_HOST_INGRESS:-0}" != "1" ]]; then
+      container_path="${url#"${INGRESS_URL}"}"
+      if [[ "${container_path}" != "${url}" ]] && run_with_timeout "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" docker exec api-proxy curl -fsS "http://127.0.0.1${container_path}" >/dev/null 2>&1; then
+        log "wait_http: ${url} reachable only via in-container fallback (api-proxy); host ingress unverified"
         return 0
+      fi
+      static_path="${url#http://127.0.0.1:4324}"
+      if [[ "${static_path}" != "${url}" ]]; then
+        static_path="${static_path:-/}"
+        if run_with_timeout "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" docker exec caddy-static-proxy wget -qO- -T "${SMOKE_HTTP_PROBE_TIMEOUT:-20}" "http://127.0.0.1${static_path}" >/dev/null 2>&1; then
+          log "wait_http: ${url} reachable only via in-container fallback (caddy-static-proxy); host ingress unverified"
+          return 0
+        fi
       fi
     fi
     sleep 2
@@ -563,6 +572,54 @@ start_container api-proxy
 
 log "Waiting for LibreChat ingress"
 wait_http "${INGRESS_URL}/login" "${SMOKE_LIBRECHAT_INGRESS_ATTEMPTS:-120}"
+
+log "Waiting for Meilisearch health inside the stack"
+wait_internal_http "http://meilisearch:7700/health" 120
+
+# Serving /login only proves static assets; a wrong app-user credential can
+# still 500 on any DB-backed route. Create a user through the app's own CLI
+# (Mongo write via the app user) and log in through the API (read + auth).
+# Registration stays disabled, so this works with the default posture.
+log "Checking Mongo write path via create-user + login round trip"
+auth_ok=false
+smoke_user_suffix="$(date +%s)"
+smoke_user_email="ci-smoke-${smoke_user_suffix}@example.test"
+smoke_user_name="ci-smoke-${smoke_user_suffix}"
+smoke_user_password="$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24 || true)aA1!"
+for attempt in $(seq 1 "${SMOKE_AUTH_PROBE_ATTEMPTS:-6}"); do
+  set +e
+  auth_result="$(
+    run_with_timeout "${SMOKE_AUTH_PROBE_TIMEOUT:-120}" docker exec \
+      -e SMOKE_EMAIL="${smoke_user_email}" \
+      -e SMOKE_USERNAME="${smoke_user_name}" \
+      -e SMOKE_PASSWORD="${smoke_user_password}" \
+      -e HTTP_PROXY= \
+      -e HTTPS_PROXY= \
+      -e http_proxy= \
+      -e https_proxy= \
+      LibreChat sh -ec '
+        # Tolerate "already exists" on retries; the login below is the assertion.
+        node /app/config/create-user.js "${SMOKE_EMAIL}" "CI Smoke" "${SMOKE_USERNAME}" "${SMOKE_PASSWORD}" --email-verified=true 2>&1 | tail -n 2 || true
+        login_body="$(curl -sS --max-time 30 \
+          -H "content-type: application/json" \
+          --data "{\"email\":\"${SMOKE_EMAIL}\",\"password\":\"${SMOKE_PASSWORD}\"}" \
+          "http://127.0.0.1:3080/api/auth/login")"
+        printf "%s\n" "${login_body}" | grep -q "\"token\""
+      ' 2>&1
+  )"
+  auth_rc=$?
+  set -e
+  printf '%s\n' "${auth_result}"
+  if [[ "${auth_rc}" -eq 0 ]]; then
+    auth_ok=true
+    break
+  fi
+  sleep 5
+done
+if [[ "${auth_ok}" != true ]]; then
+  echo "Mongo write-path probe failed: create-user/login through LibreChat never returned a token" >&2
+  exit 1
+fi
 
 log "Starting Sandpack and static preview services"
 compose_with_retry "${SMOKE_COMPOSE_UP_TIMEOUT:-1800}" \

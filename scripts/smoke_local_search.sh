@@ -40,17 +40,27 @@ for attempt in $(seq 1 60); do
   fi
   sleep 2
 done
-node -e '
+# Hard assertion by default: the probes below test SearX/Firecrawl/Jina
+# directly, so a librechat.yaml that silently disables or rewires web search
+# would otherwise pass this smoke. SMOKE_WEB_SEARCH_CONFIG_SOFT=1 restores
+# the old warn-only behavior for configs that intentionally hide details.
+SMOKE_WEB_SEARCH_CONFIG_SOFT="${SMOKE_WEB_SEARCH_CONFIG_SOFT:-0}" node -e '
 const cfg = JSON.parse(process.argv[1]);
 const ok = cfg?.interface?.webSearch === true &&
   cfg?.webSearch?.searchProvider === "searxng" &&
   cfg?.webSearch?.scraperProvider === "firecrawl" &&
   cfg?.webSearch?.rerankerType === "jina";
 if (!ok) {
-  console.warn("LibreChat config endpoint did not expose detailed web search config; continuing to tool-chain probe:", JSON.stringify({
+  const detail = JSON.stringify({
     interface: cfg?.interface?.webSearch,
     webSearch: cfg?.webSearch,
-  }));
+  });
+  if (process.env.SMOKE_WEB_SEARCH_CONFIG_SOFT === "1") {
+    console.warn("LibreChat config endpoint did not expose the expected web search config; continuing (soft mode):", detail);
+  } else {
+    console.error("LibreChat web search config is missing or wrong:", detail);
+    process.exit(1);
+  }
 } else {
   console.log("LibreChat web search config is active.");
 }

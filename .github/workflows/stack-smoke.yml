@@ -138,6 +138,9 @@ jobs:
         run: |
           chmod +x scripts/ci/smoke.sh
           export SMOKE_CLEAN_VOLUMES=1
+          # CI runners reach published ports directly; never let the
+          # in-container probe fallback mask a broken host ingress.
+          export SMOKE_REQUIRE_HOST_INGRESS=1
           ./scripts/ci/smoke.sh
 
       - name: Upload Smoke Diagnostics
