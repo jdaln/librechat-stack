@@ -320,6 +320,14 @@ docker logs -f --tail=200 egress-proxy
 
 See [backup/README.md](backup/README.md).
 
+## Running on Linux with rootless Docker
+
+The defaults target macOS + Colima (Docker as root inside the VM). To run on a
+Linux VM with **rootless Docker** instead, see
+[docs/rootless-linux.md](docs/rootless-linux.md) — it covers the port-80 publish,
+cgroup limit delegation, the nsjail code interpreter, UID mapping, and systemd
+autostart (the Colima/LaunchAgent tooling is macOS-only).
+
 ## Acknowledgements
 
 Compose foundation adapted from [nicedexter](https://github.com/nicedexter).
