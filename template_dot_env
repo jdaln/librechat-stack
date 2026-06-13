@@ -21,14 +21,21 @@ ENDPOINTS=openAI,agents
 # Optional: OpenAI-Compatible Providers
 # ------------------------------------------------------------------------------
 
-# Existing OpenCode Zen/OpenAI-compatible endpoint.
+# OpenCode Zen (OpenAI-compatible) endpoint.
+# The shared "public" key can LIST models and run the free "*-free" models, but
+# premium models (claude-*, gpt-5*, gemini-*, etc.) require a real OpenCode key.
+# Set your own key here for the premium models and higher rate limits.
 OPENAI_API_KEY=public
-OPENAI_MODELS=minimax-m2.5-free,big-pickle
+# Verified free models that complete with the public key (refresh from
+# https://opencode.ai/zen/v1/models — names change). Add premium models here
+# only when OPENAI_API_KEY is a real key.
+OPENAI_MODELS=nemotron-3-ultra-free,deepseek-v4-flash-free,mimo-v2.5-free,big-pickle
 OPENAI_REVERSE_PROXY=https://opencode.ai/zen/v1
-OPENAI_TITLE_MODEL=minimax-m2.5-free
+OPENAI_TITLE_MODEL=nemotron-3-ultra-free
 
 # Optional OpenRouter custom endpoint configured in librechat.yaml.
-# Keep the real key only in your local .env.
+# Even a free OpenRouter key unlocks the "*:free" models (e.g.
+# google/gemma-4-31b-it:free). Keep the real key only in your local .env.
 OPENROUTER_API_KEY=24389_CHANGE_ME
 
 # ------------------------------------------------------------------------------

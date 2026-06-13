@@ -60,44 +60,55 @@ endpoints:
       baseURL: "https://openrouter.ai/api/v1"
       modelDisplayLabel: "OpenRouter"
       titleConvo: true
-      titleModel: "arcee-ai/trinity-large-preview:free"
+      titleModel: "google/gemma-4-31b-it:free"
       models:
         default:
-          - "arcee-ai/trinity-large-preview:free"
-        fetch: false
+          - "google/gemma-4-31b-it:free"
+        # Auto-populate the full model list from OpenRouter when a real key is
+        # set (prevents the list from going stale); the default above keeps a
+        # verified free model selectable even when fetch fails on a placeholder key.
+        fetch: true
 
 modelSpecs:
   enforce: false
   prioritize: false
   list:
-    - name: "openrouter-trinity-large-free"
-      label: "Trinity Large Free (OpenRouter)"
+    - name: "opencode-nemotron-ultra-free"
+      label: "Nemotron 3 Ultra Free (OpenCode Zen)"
+      default: true
+      description: "Free OpenCode Zen model; works with the shared `public` OPENAI_API_KEY."
+      preset:
+        endpoint: "openAI"
+        model: "nemotron-3-ultra-free"
+        temperature: 0.2
+        greeting: "Nemotron 3 Ultra Free preset is active via OpenCode Zen (no key required).\n"
+    - name: "opencode-deepseek-flash-free"
+      label: "DeepSeek V4 Flash Free (OpenCode Zen)"
       default: false
-      description: "Working free OpenRouter preset validated against the current key."
+      description: "Free OpenCode Zen model; works with the shared `public` OPENAI_API_KEY."
+      preset:
+        endpoint: "openAI"
+        model: "deepseek-v4-flash-free"
+        temperature: 0.2
+        greeting: "DeepSeek V4 Flash Free preset is active via OpenCode Zen (no key required).\n"
+    - name: "openrouter-gemma-free"
+      label: "Gemma 4 31B Free (OpenRouter)"
+      default: false
+      description: "Free OpenRouter model; set OPENROUTER_API_KEY (free tier works)."
       preset:
         endpoint: "OpenRouter"
-        model: "arcee-ai/trinity-large-preview:free"
+        model: "google/gemma-4-31b-it:free"
         temperature: 0.2
-        greeting: "Trinity Large Free preset is active via OpenRouter.\n"
-    - name: "minimax-m2-5-free"
-      label: "MiniMax M2.5 Free (OpenCode Zen)"
-      default: true
-      description: "OpenCode Zen free MiniMax preset with lower rate-limit pressure than Big Pickle."
-      preset:
-        endpoint: "openAI"
-        model: "minimax-m2.5-free"
-        temperature: 0.2
-        greeting: "MiniMax M2.5 Free preset is active via OpenCode Zen.\n"
-    - name: "big-pickle-default"
-      label: "Big Pickle (OpenCode Zen)"
+        greeting: "Gemma 4 31B Free preset is active via OpenRouter.\n"
+    - name: "opencode-claude-fable-5"
+      label: "Claude Fable 5 (OpenCode Zen — paid key)"
       default: false
-      description: "OpenCode Zen test preset"
+      description: "Premium OpenCode Zen model; requires a real OPENAI_API_KEY (the public key only lists models)."
       preset:
         endpoint: "openAI"
-        model: "big-pickle"
+        model: "claude-fable-5"
         temperature: 0.2
-        greeting: |
-          Big Pickle test preset is active. Add your OpenCode API key in .env to run live prompts.
+        greeting: "Claude Fable 5 preset is active via OpenCode Zen. Requires a paid OpenCode key.\n"
 
 actions:
   allowedDomains:

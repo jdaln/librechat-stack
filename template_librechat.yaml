@@ -60,53 +60,54 @@ endpoints:
       baseURL: "https://openrouter.ai/api/v1"
       modelDisplayLabel: "OpenRouter"
       titleConvo: true
-      titleModel: "arcee-ai/trinity-large-preview:free"
+      titleModel: "google/gemma-4-31b-it:free"
       models:
         default:
-          - "arcee-ai/trinity-large-preview:free"
-        fetch: false
+          - "google/gemma-4-31b-it:free"
+        # Auto-populate from OpenRouter when a real key is set; the default
+        # above keeps a verified free model usable on a placeholder key.
+        fetch: true
 
 modelSpecs:
   enforce: false
   prioritize: false
   list:
+    - name: "opencode-nemotron-ultra-free"
+      label: "Nemotron 3 Ultra Free (OpenCode Zen)"
+      default: true
+      description: "Free OpenCode Zen model; works with the shared `public` OPENAI_API_KEY."
+      preset:
+        endpoint: "openAI"
+        model: "nemotron-3-ultra-free"
+        temperature: 0.2
+        greeting: "Nemotron 3 Ultra Free preset is active via OpenCode Zen (no key required).\n"
+    - name: "opencode-deepseek-flash-free"
+      label: "DeepSeek V4 Flash Free (OpenCode Zen)"
+      default: false
+      description: "Free OpenCode Zen model; works with the shared `public` OPENAI_API_KEY."
+      preset:
+        endpoint: "openAI"
+        model: "deepseek-v4-flash-free"
+        temperature: 0.2
+        greeting: "DeepSeek V4 Flash Free preset is active via OpenCode Zen (no key required).\n"
+    - name: "openrouter-gemma-free"
+      label: "Gemma 4 31B Free (OpenRouter)"
+      default: false
+      description: "Free OpenRouter model; set OPENROUTER_API_KEY (free tier works)."
+      preset:
+        endpoint: "OpenRouter"
+        model: "google/gemma-4-31b-it:free"
+        temperature: 0.2
+        greeting: "Gemma 4 31B Free preset is active via OpenRouter.\n"
     - name: "google-gemini-2-5-pro"
       label: "Gemini 2.5 Pro (Vertex)"
       default: false
-      description: "Google Vertex AI preset (requires ENDPOINTS to include google)."
+      description: "Google Vertex AI preset (requires ENDPOINTS to include google + GCP creds)."
       preset:
         endpoint: "google"
         model: "gemini-2.5-pro"
         temperature: 0.2
         greeting: "Gemini 2.5 Pro preset is active via Vertex AI.\n"
-    - name: "openrouter-trinity-large-free"
-      label: "Trinity Large Free (OpenRouter)"
-      default: false
-      description: "Working free OpenRouter preset validated against the current key."
-      preset:
-        endpoint: "OpenRouter"
-        model: "arcee-ai/trinity-large-preview:free"
-        temperature: 0.2
-        greeting: "Trinity Large Free preset is active via OpenRouter.\n"
-    - name: "minimax-m2-5-free"
-      label: "MiniMax M2.5 Free (OpenCode Zen)"
-      default: true
-      description: "OpenCode Zen free MiniMax preset with lower rate-limit pressure than Big Pickle."
-      preset:
-        endpoint: "openAI"
-        model: "minimax-m2.5-free"
-        temperature: 0.2
-        greeting: "MiniMax M2.5 Free preset is active via OpenCode Zen.\n"
-    - name: "big-pickle-default"
-      label: "Big Pickle (OpenCode Zen)"
-      default: false
-      description: "OpenCode Zen test preset"
-      preset:
-        endpoint: "openAI"
-        model: "big-pickle"
-        temperature: 0.2
-        greeting: |
-          Big Pickle test preset is active. Add your OpenCode API key in .env to run live prompts.
 
 actions:
   allowedDomains:

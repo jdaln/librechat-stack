@@ -97,21 +97,32 @@ When the local-search overlay is enabled, SearXNG/Firecrawl egress is routed thr
 
 ## Model Presets
 
-Three presets ship in `librechat.yaml`:
+Presets ship in `librechat.yaml`. The model names upstream change over time —
+verify against `https://opencode.ai/zen/v1/models` and OpenRouter if a preset 404s.
 
-| Preset | Provider | Model | Key |
+| Preset (default ★) | Provider | Model | Key |
 |--------|----------|-------|-----|
-| MiniMax M2.5 Free | OpenCode Zen | `minimax-m2.5-free` | `public` or own |
-| Big Pickle | OpenCode Zen | `big-pickle` | `public` or own |
-| Trinity Large Free | OpenRouter | `arcee-ai/trinity-large-preview:free` | `OPENROUTER_API_KEY` |
+| ★ Nemotron 3 Ultra Free | OpenCode Zen | `nemotron-3-ultra-free` | `public` (free) |
+| DeepSeek V4 Flash Free | OpenCode Zen | `deepseek-v4-flash-free` | `public` (free) |
+| Gemma 4 31B Free | OpenRouter | `google/gemma-4-31b-it:free` | `OPENROUTER_API_KEY` (free tier) |
+| Claude Fable 5 | OpenCode Zen | `claude-fable-5` | real OpenCode key (paid) |
 
-**OpenCode Zen** is the default. Set `OPENAI_API_KEY=public` in `.env` to use the shared free key, or plug in your own for fewer rate limits.
+**OpenCode Zen** is the default. The shared `OPENAI_API_KEY=public` key can
+list models and run the free `*-free` models out of the box — **but premium
+models (`claude-*`, `gpt-5*`, `gemini-*`, …) return 401 with `public`**; set
+your own OpenCode key for those and for higher rate limits.
 
-**OpenRouter** needs a separate key:
+**OpenRouter** needs a separate key (even a free one):
 ```bash
 OPENROUTER_API_KEY=<your-key>
 ```
-The free tier doesn't require credits but can be rate-limited upstream.
+With `fetch: true`, a real key auto-populates the full OpenRouter model list in
+the UI. Free `*:free` models work but are rate-limited upstream (429s) and are
+weaker at agentic tool-calling (e.g. web search).
+
+> Upstream availability drifts: OpenCode Zen dropped `minimax-m2.5-free` /
+> `big-pickle`-era free models and OpenRouter retired `trinity-large-preview`.
+> The presets above were verified live; refresh them if a model disappears.
 
 Both providers are always selectable in the UI.
 
