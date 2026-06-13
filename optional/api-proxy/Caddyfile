@@ -14,6 +14,9 @@
 :81 {
   header {
     # The bundler serves assets/packages read-only; no write methods.
+    # ⚠️ UNVERIFIED against a live browser artifact render (see README TODO).
+    # If the Sandpack preview is blank with a CORS error, restore the old value:
+    #   Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS"
     Access-Control-Allow-Origin  "*"
     Access-Control-Allow-Methods "GET, POST, OPTIONS"
     Access-Control-Allow-Headers "*"

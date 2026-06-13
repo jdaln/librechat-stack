@@ -282,6 +282,11 @@ open http://localhost:3081
 # Also verify:
 #   SANDPACK_BUNDLER_URL=http://127.0.0.1:80
 #   SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324
+#
+# If you see a CORS error (method not allowed) for 127.0.0.1:80 or
+# preview.localhost:4324, the narrowed CORS methods are the cause (see TODO):
+# restore "GET, POST, PUT, DELETE, OPTIONS" in optional/api-proxy/Caddyfile (:81)
+# and optional/static-preview/Caddyfile, then re-run populate + restart api-proxy.
 ```
 
 **Reduce log volume further (or loosen it):**
@@ -321,6 +326,15 @@ Compose foundation adapted from [nicedexter](https://github.com/nicedexter).
 
 ## TODO
 
+- ⚠️ **UNVERIFIED: Sandpack artifact-preview CORS.** The CORS allow-methods on
+  the Sandpack bundler ingress (`optional/api-proxy/Caddyfile` `:81`) and the
+  static preview (`optional/static-preview/Caddyfile`) were narrowed from
+  `GET, POST, PUT, DELETE, OPTIONS` to `GET, POST, OPTIONS`. This was **not**
+  verified against a live browser artifact render (the dev session couldn't
+  reach the loopback preview URLs). Low risk — the bundler is GET + `postMessage`
+  — but **confirm by rendering a code artifact in the browser**. If the preview
+  panel is blank with a CORS error in the console, restore `PUT, DELETE` on both
+  Caddyfiles (one line each). See the troubleshooting note above.
 - Remaining known constraints (accepted for now):
   - `code-interpreter-api` still needs `SYS_ADMIN` + `apparmor:unconfined` for current nsjail runtime.
   - Localhost ingress proxies remain dual-homed with `ingress` because host port publishing fails when attached only to internal networks in this Docker/Colima setup.
