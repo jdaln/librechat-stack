@@ -343,15 +343,24 @@ Use anchor marker(s) immediately after the statement:
 const createSearchTool = (config = {}) => {
     const { searchProvider = 'serper', serperApiKey, searxngInstanceUrl, searxngApiKey, rerankerType = 'cohere', topResults = 5, strategies = ['no_extraction'], filterContent = true, safeSearch = 1, scraperProvider = 'firecrawl', firecrawlApiKey, firecrawlApiUrl, firecrawlVersion, firecrawlOptions, serperScraperOptions, scraperTimeout, jinaApiKey, jinaApiUrl, cohereApiKey, onSearchResults: _onSearchResults, onGetHighlights, } = config;
     const logger = config.logger || utils.createDefaultLogger();
+    // `schema.*Schema` are JSON-Schema objects used to advertise the tool to
+    // models. `z.object()` only accepts ZodType values, so build a parallel zod
+    // shape for runtime validation.
     const schemaObject = {
-        query: schema.querySchema,
-        date: schema.dateSchema,
-        images: schema.imagesSchema,
-        videos: schema.videosSchema,
-        news: schema.newsSchema,
+        query: zod.z.string().describe(schema.querySchema.description),
+        date: zod.z
+            .enum(Object.values(schema.DATE_RANGE))
+            .optional()
+            .describe(schema.dateSchema.description),
+        images: zod.z.boolean().optional().describe(schema.imagesSchema.description),
+        videos: zod.z.boolean().optional().describe(schema.videosSchema.description),
+        news: zod.z.boolean().optional().describe(schema.newsSchema.description),
     };
     if (searchProvider === 'serper') {
-        schemaObject.country = schema.countrySchema;
+        schemaObject.country = zod.z
+            .string()
+            .optional()
+            .describe(schema.countrySchema.description);
     }
     const toolSchema = zod.z.object(schemaObject);
     const searchAPI = search.createSearchAPI({
