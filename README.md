@@ -43,13 +43,19 @@ Open the app at `http://localhost:3081` (through `api-proxy`).
 > plus any optional `-f` overlays. The helper script handles this for you.
 > Treat `compose.hardening.yml` as required, not optional — the overlay
 > stacks assume the core services run hardened.
+> If you only have the legacy `docker-compose` binary (not the V2 plugin),
+> substitute `docker-compose` for `docker compose` in every command below.
 
 After the stack is up, create the first admin user:
 
 ```bash
 docker compose -f docker-compose.yml -f compose.hardening.yml \
-  exec api npm run create-user
+  exec -w /app api npm run create-user
 ```
+
+(`-w /app` is needed because the script is registered in the root
+`package.json`; the `api` workspace has a stale entry pointing at the wrong
+path.)
 
 ### Optional: user-namespace remapping
 
