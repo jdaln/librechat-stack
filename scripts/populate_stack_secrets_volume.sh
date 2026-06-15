@@ -147,7 +147,8 @@ main() {
     rm -rf /run/secrets/* &&
     mkdir -p /run/secrets/egress-proxy /run/secrets/api-proxy /run/secrets/api \
              /run/secrets/mongodb /run/secrets/mongo-init /run/secrets/rag-api \
-             /run/secrets/searxng-auth /run/secrets/static-preview
+             /run/secrets/searxng-auth /run/secrets/static-preview \
+             /run/secrets/code-interpreter-proxy
   '
 
   copy_required "${PROJECT_ROOT}/librechat.yaml" api/librechat_yaml
@@ -157,6 +158,7 @@ main() {
   copy_required "${PROJECT_ROOT}/optional/egress-proxy/allowed_domains.txt" egress-proxy/squid_allowlist
   copy_required "${PROJECT_ROOT}/optional/local-search/searxng/auth-proxy.Caddyfile" searxng-auth/searxng_auth_caddyfile
   copy_required "${PROJECT_ROOT}/optional/static-preview/Caddyfile" static-preview/static_preview_caddyfile
+  copy_required "${PROJECT_ROOT}/optional/code-interpreter/Caddyfile" code-interpreter-proxy/code_interpreter_proxy_caddyfile
   copy_required "${SECRETS_DIR}/runtime-mongo-root-user.txt" mongodb/mongo_root_user
   copy_required "${SECRETS_DIR}/runtime-mongo-root-password.txt" mongodb/mongo_root_password
   copy_required "${SECRETS_DIR}/runtime-mongo-root-user.txt" mongo-init/mongo_root_user

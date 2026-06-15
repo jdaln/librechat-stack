@@ -53,13 +53,13 @@ services:
     restart: always
     cap_add:
       - NET_BIND_SERVICE
-    command:
-      - caddy
-      - reverse-proxy
-      - --from
-      - http://:8000
-      - --to
-      - http://code-interpreter-backend:8000
+    environment:
+      # Substituted into the Caddyfile via {env.LIBRECHAT_CODE_API_KEY} so the
+      # backend always sees the static x-api-key header it requires — upstream
+      # LibreChat dropped the static-key path in favor of JWT auth, which
+      # LibreCodeInterpreter does not understand.
+      LIBRECHAT_CODE_API_KEY: ${LIBRECHAT_CODE_API_KEY:?set LIBRECHAT_CODE_API_KEY in .env}
+    command: ["caddy", "run", "--config", "/run/secrets/code_interpreter_proxy_caddyfile", "--adapter", "caddyfile"]
     depends_on:
       code-interpreter-api:
         condition: service_healthy
@@ -73,6 +73,13 @@ services:
           # Preserve existing LIBRECHAT_CODE_BASEURL values that point at
           # http://code-interpreter-api:8000.
           - code-interpreter-api
+    volumes:
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: code-interpreter-proxy
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- -T 45 http://127.0.0.1:8000/health >/dev/null 2>&1"]
       interval: 30s
@@ -83,7 +90,6 @@ services:
     cpus: "0.5"
     tmpfs:
       - "/tmp:size=128m"
-      - "/run:size=32m"
       - "/config:size=16m"
       - "/data:size=16m"
     logging: *json_logging

@@ -1,0 +1,19 @@
+{
+  auto_https disable_redirects
+  log {
+    level WARN
+  }
+}
+
+# Reverse proxy in front of the LibreCodeInterpreter backend.
+#
+# Upstream LibreChat removed the static LIBRECHAT_CODE_API_KEY transport in
+# favor of JWT-minted Bearer tokens, but LibreCodeInterpreter still expects a
+# static x-api-key header. We inject that header here so LibreChat can call
+# the proxy without any auth header and the backend still sees the key it
+# expects. Read at startup from LIBRECHAT_CODE_API_KEY on this container.
+:8000 {
+  reverse_proxy http://code-interpreter-backend:8000 {
+    header_up X-Api-Key {env.LIBRECHAT_CODE_API_KEY}
+  }
+}
