@@ -111,12 +111,31 @@ GOOGLE_LOC=europe-north1
 # ------------------------------------------------------------------------------
 # RAG API Configuration
 # ------------------------------------------------------------------------------
-
-# The provider for generating text embeddings. Default is Google Vertex AI.
-EMBEDDINGS_PROVIDER=vertexai
+#
+# Three supported setups:
+#
+#   1. Local CPU embeddings container (recommended — no external API key):
+#        ENABLE_EMBEDDINGS=1 ./scripts/start_stack.sh
+#      The optional `embeddings` overlay (optional/embeddings/) ships an
+#      OpenAI-compatible service with intfloat/multilingual-e5-large baked
+#      into the image. When the overlay is on, the values below are
+#      automatically overridden in optional/embeddings/compose.yml — you
+#      don't need to change anything here.
+#
+#   2. Real OpenAI key:
+#        EMBEDDINGS_PROVIDER=openai
+#        EMBEDDINGS_MODEL=text-embedding-3-small
+#        RAG_OPENAI_API_KEY=sk-...
+#
+#   3. Google Vertex AI (requires secrets/gcp-sa.json):
+#        EMBEDDINGS_PROVIDER=vertexai
+#        EMBEDDINGS_MODEL=text-embedding-004
+#
+# The provider for generating text embeddings.
+EMBEDDINGS_PROVIDER=openai
 
 # The specific model to use for embeddings.
-EMBEDDINGS_MODEL=text-embedding-004 # default for google
+EMBEDDINGS_MODEL=intfloat/multilingual-e5-large
 
 # Whether to extract images from PDF files during processing.
 PDF_EXTRACT_IMAGES=True

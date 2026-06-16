@@ -147,10 +147,11 @@ STACK_PROFILE=local-only        ./scripts/start_stack.sh   # base only
 STACK_PROFILE=local-code        ./scripts/start_stack.sh   # + code interpreter
 STACK_PROFILE=local-search      ./scripts/start_stack.sh   # + web search
 STACK_PROFILE=local-search-code ./scripts/start_stack.sh   # both
+STACK_PROFILE=local-rag         ./scripts/start_stack.sh   # + local embeddings for RAG
 STACK_PROFILE=full              ./scripts/start_stack.sh   # everything incl. static preview
 ```
 
-Without `STACK_PROFILE`, the script checks `ENABLE_CODE_INTERPRETER`, `ENABLE_LOCAL_SEARCH`, and `ENABLE_STATIC_PREVIEW` individually.
+Without `STACK_PROFILE`, the script checks `ENABLE_CODE_INTERPRETER`, `ENABLE_LOCAL_SEARCH`, `ENABLE_EMBEDDINGS`, and `ENABLE_STATIC_PREVIEW` individually.
 
 ---
 
@@ -218,6 +219,37 @@ Search context is bounded by default (3 results, 2 scraped sources, 2 highlights
 - A mounted search patch caps scraped text, requests `markdown` + `onlyMainContent`, and strips raw `content` from the artifact returned to the model.
 - After editing files under `optional/local-search/jina/`, recreate the container to pick up changes.
 - Set a strong `SEARXNG_API_KEY` in `.env` (don’t leave placeholders) so internal search calls are authenticated.
+
+</details>
+
+---
+
+### Local Embeddings (RAG)
+
+Self-hosted OpenAI-compatible embeddings server backed by [fastembed](https://github.com/qdrant/fastembed) (ONNX runtime). Lets `rag_api` index uploaded files without an external API key.
+
+```bash
+ENABLE_EMBEDDINGS=1 ./scripts/start_stack.sh
+
+# Verify
+docker exec LibreChat sh -c 'curl -sS http://rag_api:8000/health'
+docker exec LibreChat sh -c 'curl -sS -X POST http://embeddings:8000/v1/embeddings \
+  -H "content-type: application/json" \
+  -d "{\"input\":\"hello\",\"model\":\"intfloat/multilingual-e5-large\"}" | head -c 200'
+```
+
+The default model is **`intfloat/multilingual-e5-large`** (1024-dim, multilingual, baked into the image at build time — ~2.5GB). CPU inference: ~10–20 docs/sec batch, sub-second per query on M-series. Override with `EMBEDDINGS_MODEL=<fastembed-supported-model>` and rebuild.
+
+The overlay also rewires `rag_api`: when `ENABLE_EMBEDDINGS=1`, `RAG_OPENAI_BASEURL` points at the local container automatically — `.env` doesn't need any embedding-provider config.
+
+<details>
+<summary>Implementation notes</summary>
+
+- The container is built locally from `optional/embeddings/Dockerfile`. First build downloads the model from Hugging Face (~2.5GB); subsequent runs are offline (`HF_HUB_OFFLINE=1`).
+- Attached only to the `lan` network — same posture as `vectordb` and the databases. No WAN egress, no path to Squid. Verifiable via `docs/egress-policy.md`.
+- Hardened identically to other stack services: `read_only: true`, `cap_drop: ALL`, `no-new-privileges`, runs as UID 10001.
+- Exposes OpenAI's `/v1/embeddings` shape; `rag_api` (which uses the OpenAI client) talks to it without code changes.
+- `MAX_BATCH_SIZE=64` by default — increase via `EMBEDDINGS_MAX_BATCH` if you index large corpora.
 
 </details>
 

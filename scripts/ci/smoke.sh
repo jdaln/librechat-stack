@@ -1170,4 +1170,34 @@ grep -q '"stdout":"4\\n"' <<<"${exec_result}"
 log "Checking local search stack"
 ./scripts/smoke_local_search.sh
 
+# Embeddings overlay is opt-in. Probe only when enabled — the smoke runs
+# both with and without the overlay attached.
+if docker ps --format '{{.Names}}' | grep -q '^embeddings$'; then
+  log "Checking embeddings overlay produces a vector"
+  emb_result="$(
+    run_with_timeout "${SMOKE_INTERNAL_HTTP_PROBE_TIMEOUT:-90}" docker exec \
+      -e HTTP_PROXY= -e HTTPS_PROXY= -e http_proxy= -e https_proxy= \
+      LibreChat sh -ec '
+        body="{\"input\":\"smoke test\",\"model\":\"smoke\"}"
+        curl -sS --noproxy "*" --max-time 60 \
+          -H "content-type: application/json" \
+          --data "${body}" \
+          "http://embeddings:8000/v1/embeddings"
+      ' 2>&1
+  )"
+  printf '%s\n' "${emb_result}" | head -c 300; echo
+  # Vector must be 1024-dim (the multilingual-e5-large default). If a
+  # different model was baked in, override via EMBEDDINGS_SMOKE_DIM.
+  expected_dim="${EMBEDDINGS_SMOKE_DIM:-1024}"
+  vec_len="$(printf '%s' "${emb_result}" | python3 -c "
+import json, sys
+d = json.load(sys.stdin)
+print(len(d['data'][0]['embedding']))
+" 2>/dev/null)"
+  if [[ "${vec_len}" != "${expected_dim}" ]]; then
+    echo "embeddings probe returned wrong dim (got ${vec_len:-none}, expected ${expected_dim})" >&2
+    exit 1
+  fi
+fi
+
 log "Smoke checks passed"

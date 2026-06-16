@@ -14,6 +14,7 @@ under what rules. Source of truth: `optional/egress-proxy/squid.conf` +
 | `chat-mongodb`          | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
 | `chat-meilisearch`      | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
 | `vectordb`              | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
+| `embeddings`            | ❌          | ✅             | **Allowlist** (LAN policy) — unused, model is baked into the image at build time |
 | `searxng`               | ❌          | ✅             | **Broad** (search_egress policy)           |
 | `firecrawl-api`         | ❌          | ✅             | **Broad** (search_egress policy)           |
 | `firecrawl-playwright`  | ❌          | ✅             | **Broad** (search_egress policy)           |

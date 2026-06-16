@@ -13,6 +13,7 @@ DOCKER_CONTEXT_NAME="${DOCKER_CONTEXT_NAME:-colima-${COLIMA_PROFILE}}"
 ENABLE_STATIC_PREVIEW="${ENABLE_STATIC_PREVIEW:-0}"
 ENABLE_CODE_INTERPRETER="${ENABLE_CODE_INTERPRETER:-0}"
 ENABLE_LOCAL_SEARCH="${ENABLE_LOCAL_SEARCH:-0}"
+ENABLE_EMBEDDINGS="${ENABLE_EMBEDDINGS:-0}"
 STACK_PROFILE="${STACK_PROFILE:-}"
 
 log() {
@@ -54,30 +55,41 @@ apply_stack_profile() {
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=0
       ENABLE_LOCAL_SEARCH=0
+      ENABLE_EMBEDDINGS=0
       ;;
     local-code)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=1
       ENABLE_LOCAL_SEARCH=0
+      ENABLE_EMBEDDINGS=0
       ;;
     local-search)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=0
       ENABLE_LOCAL_SEARCH=1
+      ENABLE_EMBEDDINGS=0
       ;;
     local-search-code)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=1
       ENABLE_LOCAL_SEARCH=1
+      ENABLE_EMBEDDINGS=0
+      ;;
+    local-rag)
+      ENABLE_STATIC_PREVIEW=0
+      ENABLE_CODE_INTERPRETER=0
+      ENABLE_LOCAL_SEARCH=0
+      ENABLE_EMBEDDINGS=1
       ;;
     full)
       ENABLE_STATIC_PREVIEW=1
       ENABLE_CODE_INTERPRETER=1
       ENABLE_LOCAL_SEARCH=1
+      ENABLE_EMBEDDINGS=1
       ;;
     *)
       echo "ERROR: unsupported STACK_PROFILE='${STACK_PROFILE}'" >&2
-      echo "Valid profiles: local-only, local-code, local-search, local-search-code, full" >&2
+      echo "Valid profiles: local-only, local-code, local-search, local-search-code, local-rag, full" >&2
       exit 1
       ;;
   esac
@@ -184,10 +196,13 @@ compose_up() {
   if [[ "${ENABLE_LOCAL_SEARCH}" == "1" ]]; then
     compose_files+=(-f optional/local-search/compose.yml)
   fi
+  if [[ "${ENABLE_EMBEDDINGS}" == "1" ]]; then
+    compose_files+=(-f optional/embeddings/compose.yml)
+  fi
 
   (
     cd "${PROJECT_ROOT}"
-    if [[ "${ENABLE_CODE_INTERPRETER}" == "1" || "${ENABLE_LOCAL_SEARCH}" == "1" ]]; then
+    if [[ "${ENABLE_CODE_INTERPRETER}" == "1" || "${ENABLE_LOCAL_SEARCH}" == "1" || "${ENABLE_EMBEDDINGS}" == "1" ]]; then
       export DOCKER_BUILDKIT="${DOCKER_BUILDKIT:-1}"
       export COMPOSE_DOCKER_CLI_BUILD="${COMPOSE_DOCKER_CLI_BUILD:-1}"
     fi
@@ -218,6 +233,7 @@ ensure_secret_permissions() {
   # flags extend validation to the overlay secrets.
   ENABLE_CODE_INTERPRETER="${ENABLE_CODE_INTERPRETER}" \
   ENABLE_LOCAL_SEARCH="${ENABLE_LOCAL_SEARCH}" \
+  ENABLE_EMBEDDINGS="${ENABLE_EMBEDDINGS}" \
     "${SCRIPT_DIR}/populate_stack_secrets_volume.sh"
 }
 
@@ -238,7 +254,7 @@ main() {
   prepare_local_search
   ensure_secret_permissions
 
-  log "Resolved stack profile: ${STACK_PROFILE:-manual-flags} (static_preview=${ENABLE_STATIC_PREVIEW}, code_interpreter=${ENABLE_CODE_INTERPRETER}, local_search=${ENABLE_LOCAL_SEARCH})"
+  log "Resolved stack profile: ${STACK_PROFILE:-manual-flags} (static_preview=${ENABLE_STATIC_PREVIEW}, code_interpreter=${ENABLE_CODE_INTERPRETER}, local_search=${ENABLE_LOCAL_SEARCH}, embeddings=${ENABLE_EMBEDDINGS})"
   compose_up
   log "LibreChat stack is up"
 }

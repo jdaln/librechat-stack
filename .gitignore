@@ -6,3 +6,5 @@ secrets/
 ci_artifacts/
 .DS_Store
 feedback.txt
+# Local research / WIP that should never land in the repo
+experiments/

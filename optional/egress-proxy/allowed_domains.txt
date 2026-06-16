@@ -15,3 +15,8 @@ oauth2.googleapis.com
 generativelanguage.googleapis.com
 iamcredentials.googleapis.com
 sts.googleapis.com
+
+# tiktoken encoding download. rag_api uses tiktoken for query tokenization
+# (langchain OpenAIEmbeddings default) and downloads cl100k_base.tiktoken on
+# first use; subsequent calls are cached locally. ~1.7MB one-shot.
+openaipublic.blob.core.windows.net

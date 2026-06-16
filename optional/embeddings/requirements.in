@@ -1,0 +1,8 @@
+# Top-level pins for the embeddings overlay. Renovate tracks this file
+# for new package versions; the full transitive lockfile (with SHA-256
+# hashes for every package) lives in requirements.txt and is what the
+# Dockerfile actually installs from.
+fastapi==0.119.0
+uvicorn[standard]==0.38.0
+pydantic==2.12.3
+fastembed==0.7.4

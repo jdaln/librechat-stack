@@ -1,0 +1,86 @@
+x-json-logging: &json_logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+    max-file: ${DOCKER_LOG_MAX_FILE:-3}
+
+x-harden: &harden
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 200
+  ulimits:
+    nofile: { soft: 1024, hard: 2048 }
+
+services:
+  # Wire embeddings into rag_api when the overlay is enabled. The rag_api
+  # default config in docker-compose.yml points at OpenAI; this overlay
+  # transparently redirects every embeddings call to the local container.
+  rag_api:
+    depends_on:
+      embeddings:
+        condition: service_healthy
+    environment:
+      RAG_OPENAI_BASEURL: http://embeddings:8000/v1
+      # Any non-empty value — the embeddings container does no auth check
+      # (only reachable via the internal `lan` network).
+      RAG_OPENAI_API_KEY: local
+      EMBEDDINGS_PROVIDER: openai
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-large}
+      # langchain's OpenAIEmbeddings pre-tokenizes inputs with tiktoken (using
+      # OpenAI-specific BPE encodings) and forwards the token IDs to the
+      # embedding endpoint. Our local container only accepts strings — it
+      # uses its own tokenizer. Disabling the context-length check makes
+      # langchain send raw strings instead.
+      RAG_CHECK_EMBEDDING_CTX_LENGTH: "false"
+      # Same NO_PROXY shape as docker-compose.yml but with `embeddings` added,
+      # so rag_api bypasses the egress proxy when calling the local embedder.
+      # Without this, Squid blocks the internal call (RFC1918 deny rule).
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},embeddings
+      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},embeddings
+
+  embeddings:
+    <<: *harden
+    build:
+      context: .
+      dockerfile: optional/embeddings/Dockerfile
+      args:
+        EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-large}
+    image: librechat-stack/embeddings-runtime:local
+    container_name: embeddings
+    restart: always
+    mem_limit: "3g"
+    cpus: "2.0"
+    # No env_file: this container talks to no external services; it only
+    # needs the small set of variables listed below.
+    environment:
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-intfloat/multilingual-e5-large}
+      EMBEDDINGS_CACHE_DIR: /app/models
+      EMBEDDINGS_MAX_BATCH: ${EMBEDDINGS_MAX_BATCH:-64}
+      EMBEDDINGS_LOG_LEVEL: ${EMBEDDINGS_LOG_LEVEL:-WARNING}
+      # ONNX runtime thread cap. Keep at 1 for predictable latency on
+      # shared hosts; bump on dedicated boxes.
+      OMP_NUM_THREADS: ${EMBEDDINGS_OMP_NUM_THREADS:-2}
+      TOKENIZERS_PARALLELISM: "false"
+      DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
+      HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
+      # Force fastembed offline — the model was baked in at build time
+      # and the container has no WAN egress.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
+    tmpfs:
+      - "/tmp:size=256m"
+      - "/run:size=32m"
+    networks:
+      # `lan` is where rag_api lives. No other network — no WAN egress,
+      # no path to Squid, no shared bridge with code-interpreter or search.
+      - lan
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "python -c \"import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health').getcode() == 200 else 1)\""
+      interval: 30s
+      timeout: 60s
+      retries: 30
+      start_period: 180s
+    logging: *json_logging

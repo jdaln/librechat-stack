@@ -16,8 +16,10 @@ interface:
   sidePanel: true
   presets: true
   webSearch: true
-  fileSearch: false
-  fileCitations: false
+  # File search needs the optional `embeddings` overlay (or a real
+  # OpenAI key) — see optional/embeddings/ + docs/egress-policy.md.
+  fileSearch: true
+  fileCitations: true
 
 webSearch:
   searchProvider: searxng
