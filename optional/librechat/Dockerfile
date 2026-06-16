@@ -1,4 +1,4 @@
-ARG LIBRECHAT_IMAGE=registry.librechat.ai/danny-avila/librechat-dev-api:latest@sha256:d71f74c750d5ea8f42310444ebe88d855c3d00ea57e30f5e4c759e92658b4920
+ARG LIBRECHAT_IMAGE=ghcr.io/danny-avila/librechat:v0.8.6@sha256:208e0f63eefd0143191768b22675d126250eb893defae2469598adb09b17e85d
 FROM ${LIBRECHAT_IMAGE}
 
 COPY optional/librechat/registerSW.noop.js /app/client/dist/registerSW.js

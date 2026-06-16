@@ -40,8 +40,9 @@ services:
     environment:
       LIBRECHAT_CODE_BASEURL: ${LIBRECHAT_CODE_BASEURL:-http://code-interpreter-api:8000}
       LIBRECHAT_CODE_API_KEY: ${LIBRECHAT_CODE_API_KEY:?set LIBRECHAT_CODE_API_KEY in .env}
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},code-interpreter-api,code-interpreter-proxy
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},code-interpreter-api,code-interpreter-proxy
+      # NO_PROXY lives in docker-compose.yml as a single canonical list that
+      # already includes code-interpreter hostnames (overlay-side overrides
+      # would clobber each other in last-write-wins compose merge).
     networks:
       - code_gateway
     logging: *json_logging

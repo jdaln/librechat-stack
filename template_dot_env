@@ -165,7 +165,12 @@ DOCKER_LOG_MAX_SIZE=10m
 DOCKER_LOG_MAX_FILE=3
 
 # Internal hosts that should bypass proxying.
-NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy
+# The canonical list lives in docker-compose.yml (default value of this var);
+# the value below mirrors it and includes every overlay's services so that
+# any combination of overlays works correctly. If you add a new service that
+# LibreChat / rag_api needs to reach without going through Squid, add it here
+# AND to the default in docker-compose.yml.
+NO_PROXY=localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api,code-interpreter-proxy,searxng-auth,jina-reranker,firecrawl-api,searxng,searxng-valkey,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,embeddings
 
 # Disable telemetry where supported.
 DO_NOT_TRACK=1

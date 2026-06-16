@@ -825,8 +825,16 @@ fi
 
 log "Checking RAG image source and pin"
 rag_image="$(docker inspect rag_api --format '{{.Config.Image}}')"
-if [[ "${rag_image}" != registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:* ]] || [[ "${rag_image}" != *"@sha256:"* ]]; then
-  echo "Unexpected rag_api image, expected registry.librechat.ai digest pin: ${rag_image}" >&2
+# Accept either the legacy registry.librechat.ai source or the ghcr.io GA
+# source — both are upstream-maintained. The hard requirement is the digest
+# pin: a remote image without @sha256: is what we're catching.
+if [[ "${rag_image}" != ghcr.io/danny-avila/librechat-rag-api-dev-lite:* ]] \
+   && [[ "${rag_image}" != registry.librechat.ai/danny-avila/librechat-rag-api-dev-lite:* ]]; then
+  echo "Unexpected rag_api image source: ${rag_image}" >&2
+  exit 1
+fi
+if [[ "${rag_image}" != *"@sha256:"* ]]; then
+  echo "rag_api image is not digest-pinned: ${rag_image}" >&2
   exit 1
 fi
 

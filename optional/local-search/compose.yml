@@ -67,8 +67,9 @@ services:
       - lan
       - search_gateway
     environment:
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
-      no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy},searxng-auth,jina-reranker,firecrawl-api
+      # NO_PROXY lives in docker-compose.yml as a single canonical list that
+      # already includes searxng-auth/jina-reranker/firecrawl-api (overlay-side
+      # overrides would clobber each other in last-write-wins compose merge).
       SEARXNG_INSTANCE_URL: ${SEARXNG_INSTANCE_URL_INTERNAL:-http://searxng-auth:8080}
       SEARXNG_API_KEY: ${SEARXNG_API_KEY:?set SEARXNG_API_KEY in .env}
       LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-3}
