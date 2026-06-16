@@ -191,7 +191,7 @@ services:
 
   firecrawl-api:
     <<: *harden
-    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:latest@sha256:6c5049312506841d85e0bc386da34656630645dca867d72e9a33aa01a1f1b519}
+    image: ${FIRECRAWL_IMAGE:-ghcr.io/firecrawl/firecrawl:2.10.18@sha256:446afdbbc16316f29fbd85cb4d422334deefbd3e6dae76d61a5840a6bdceeedd}
     container_name: firecrawl-api
     mem_limit: "3g"
     cpus: "2.0"
