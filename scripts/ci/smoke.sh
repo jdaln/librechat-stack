@@ -1147,23 +1147,16 @@ if [[ "${models_ok}" != true ]]; then
 fi
 
 log "Checking code interpreter execution from LibreChat container"
+# Probe script (two steps, exits non-zero on failure):
+#   STEP1 — basic /exec; STEP2 — /exec with files[] carrying only
+#   storage_session_id (no session_id). STEP2 protects against a stripped
+#   RequestFile model that would 422 every follow-up bash_tool / execute_code
+#   call in the UI (file injection from the prior turn is the trigger).
+# LibreChat (GA v0.8.6+) ships no curl/jq, so the probe uses python3 stdlib.
 set +e
 exec_result="$(
-  run_with_timeout "${SMOKE_CODE_EXEC_PROBE_TIMEOUT:-300}" docker exec \
-    -e HTTP_PROXY= \
-    -e HTTPS_PROXY= \
-    -e http_proxy= \
-    -e https_proxy= \
-    LibreChat sh -ec '
-      body="{\"lang\":\"py\",\"code\":\"print(2+2)\",\"entity_id\":\"ci-smoke\",\"user_id\":\"ci-smoke\"}"
-      response="$(curl -sS --max-time "${SMOKE_CODE_EXEC_PROBE_TIMEOUT:-300}" -w "\nSTATUS %{http_code}\n" \
-        -H "content-type: application/json" \
-        -H "x-api-key: ${LIBRECHAT_CODE_API_KEY}" \
-        --data "${body}" \
-        "${LIBRECHAT_CODE_BASEURL%/}/exec")"
-      printf "%s\n" "${response}"
-      printf "%s\n" "${response}" | grep -q "^STATUS 200$"
-    ' 2>&1
+  run_with_timeout "${SMOKE_CODE_EXEC_PROBE_TIMEOUT:-300}" \
+    docker exec -i LibreChat python3 < "${ROOT_DIR}/scripts/ci/probe_code_interpreter.py" 2>&1
 )"
 exec_rc=$?
 set -e
@@ -1172,8 +1165,8 @@ if [[ "${exec_rc}" -ne 0 ]]; then
   echo "Code interpreter execution probe failed" >&2
   exit 1
 fi
-grep -q '^STATUS 200$' <<<"${exec_result}"
-grep -q '"stdout":"4\\n"' <<<"${exec_result}"
+grep -q 'STEP1 status=200' <<<"${exec_result}"
+grep -q 'STEP2 status=200' <<<"${exec_result}"
 
 log "Checking local search stack"
 ./scripts/smoke_local_search.sh
