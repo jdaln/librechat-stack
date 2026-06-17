@@ -9,7 +9,7 @@ fileStrategy: "local"
 secureImageLinks: true
 
 interface:
-  customWelcome: "LibreChat running on hardened Docker with OpenRouter and OpenCode presets."
+  customWelcome: "LibreChat — local-only inference via host Ollama."
   endpointsMenu: true
   modelSelect: true
   parameters: true
@@ -44,8 +44,7 @@ webSearch:
 endpoints:
   agents:
     allowedProviders:
-      - openAI
-      - OpenRouter
+      - Ollama
     capabilities:
       - tools
       - execute_code
@@ -57,60 +56,88 @@ endpoints:
       - chain
       - ocr
   custom:
-    - name: "OpenRouter"
-      apiKey: "${OPENROUTER_API_KEY}"
-      baseURL: "https://openrouter.ai/api/v1"
-      modelDisplayLabel: "OpenRouter"
+    # Ollama on the host, bridged via the `ollama-proxy` container (enable
+    # the overlay with ENABLE_OLLAMA=1). The proxy lives on the internal `lan`
+    # network and forwards requests to host.docker.internal:11434. Ollama is
+    # OpenAI-compatible at /v1, so this is a standard custom-endpoint entry.
+    - name: "Ollama"
+      # Ollama doesn't enforce auth; any non-empty string works. The proxy
+      # is only reachable from inside the stack, so there's nothing to
+      # authenticate against the world.
+      apiKey: "ollama"
+      baseURL: "http://ollama-proxy:11434/v1"
+      modelDisplayLabel: "Ollama"
       titleConvo: true
-      titleModel: "google/gemma-4-31b-it:free"
+      titleMethod: "completion"
+      titleModel: "current_model"
       models:
+        # `fetch: true` queries /v1/models on the proxy and surfaces every
+        # model the host's Ollama daemon has pulled. Add new models with
+        # `ollama pull <name>` on the host; they appear here automatically.
+        # The default below is the fallback shown when fetch fails (e.g.
+        # ollama-proxy not yet healthy on first boot).
         default:
-          - "google/gemma-4-31b-it:free"
-        # Auto-populate the full model list from OpenRouter when a real key is
-        # set (prevents the list from going stale); the default above keeps a
-        # verified free model selectable even when fetch fails on a placeholder key.
+          - "gemma4:31b-mlx"
+          - "gemma4:26b-mlx"
+          - "gemma4:12b-mlx"
+          - "gemma4:e4b-mlx"
+          - "gemma4:e2b-mlx"
         fetch: true
 
 modelSpecs:
   enforce: false
   prioritize: false
   list:
-    - name: "opencode-nemotron-ultra-free"
-      label: "Nemotron 3 Ultra Free (OpenCode Zen)"
+    # All five presets are Apple-MLX builds of Gemma 4, pulled into the
+    # host Ollama. Pull on the host with:
+    #   ollama pull gemma4:<size>-mlx
+    # The default is gemma4:31b-mlx — top quality, ~20GB on disk, requires
+    # roughly the same in unified memory on Apple Silicon.
+    - name: "ollama-gemma4-31b"
+      label: "Gemma 4 31B MLX (Ollama)"
       default: true
-      description: "Free OpenCode Zen model; works with the shared `public` OPENAI_API_KEY."
+      description: "Local Gemma 4 31B via host Ollama (Apple MLX). 20GB, 256K context. Highest quality of the local set."
       preset:
-        endpoint: "openAI"
-        model: "nemotron-3-ultra-free"
+        endpoint: "Ollama"
+        model: "gemma4:31b-mlx"
         temperature: 0.2
-        greeting: "Nemotron 3 Ultra Free preset is active via OpenCode Zen (no key required).\n"
-    - name: "opencode-deepseek-flash-free"
-      label: "DeepSeek V4 Flash Free (OpenCode Zen)"
+        greeting: "Gemma 4 31B MLX preset is active via host Ollama.\n"
+    - name: "ollama-gemma4-26b"
+      label: "Gemma 4 26B MLX (Ollama)"
       default: false
-      description: "Free OpenCode Zen model; works with the shared `public` OPENAI_API_KEY."
+      description: "Local Gemma 4 26B via host Ollama (Apple MLX). 17GB, 256K context."
       preset:
-        endpoint: "openAI"
-        model: "deepseek-v4-flash-free"
+        endpoint: "Ollama"
+        model: "gemma4:26b-mlx"
         temperature: 0.2
-        greeting: "DeepSeek V4 Flash Free preset is active via OpenCode Zen (no key required).\n"
-    - name: "openrouter-gemma-free"
-      label: "Gemma 4 31B Free (OpenRouter)"
+        greeting: "Gemma 4 26B MLX preset is active via host Ollama.\n"
+    - name: "ollama-gemma4-12b"
+      label: "Gemma 4 12B MLX (Ollama)"
       default: false
-      description: "Free OpenRouter model; set OPENROUTER_API_KEY (free tier works)."
+      description: "Local Gemma 4 12B via host Ollama (Apple MLX). 6.8GB, 256K context — good speed/quality balance."
       preset:
-        endpoint: "OpenRouter"
-        model: "google/gemma-4-31b-it:free"
+        endpoint: "Ollama"
+        model: "gemma4:12b-mlx"
         temperature: 0.2
-        greeting: "Gemma 4 31B Free preset is active via OpenRouter.\n"
-    - name: "opencode-claude-fable-5"
-      label: "Claude Fable 5 (OpenCode Zen — paid key)"
+        greeting: "Gemma 4 12B MLX preset is active via host Ollama.\n"
+    - name: "ollama-gemma4-e4b"
+      label: "Gemma 4 E4B MLX (Ollama)"
       default: false
-      description: "Premium OpenCode Zen model; requires a real OPENAI_API_KEY (the public key only lists models)."
+      description: "Local Gemma 4 E4B via host Ollama (Apple MLX). 9.6GB, 128K context — efficient sub-12B option."
       preset:
-        endpoint: "openAI"
-        model: "claude-fable-5"
+        endpoint: "Ollama"
+        model: "gemma4:e4b-mlx"
         temperature: 0.2
-        greeting: "Claude Fable 5 preset is active via OpenCode Zen. Requires a paid OpenCode key.\n"
+        greeting: "Gemma 4 E4B MLX preset is active via host Ollama.\n"
+    - name: "ollama-gemma4-e2b"
+      label: "Gemma 4 E2B MLX (Ollama)"
+      default: false
+      description: "Local Gemma 4 E2B via host Ollama (Apple MLX). 7.1GB, 128K context — fastest, lowest memory."
+      preset:
+        endpoint: "Ollama"
+        model: "gemma4:e2b-mlx"
+        temperature: 0.2
+        greeting: "Gemma 4 E2B MLX preset is active via host Ollama.\n"
 
 actions:
   allowedDomains:

@@ -14,6 +14,7 @@ ENABLE_STATIC_PREVIEW="${ENABLE_STATIC_PREVIEW:-0}"
 ENABLE_CODE_INTERPRETER="${ENABLE_CODE_INTERPRETER:-0}"
 ENABLE_LOCAL_SEARCH="${ENABLE_LOCAL_SEARCH:-0}"
 ENABLE_EMBEDDINGS="${ENABLE_EMBEDDINGS:-0}"
+ENABLE_OLLAMA="${ENABLE_OLLAMA:-0}"
 STACK_PROFILE="${STACK_PROFILE:-}"
 
 log() {
@@ -50,46 +51,67 @@ apply_stack_profile() {
     return
   fi
 
+  # All standard profiles assume the operator is running Ollama on the host
+  # (local LLM inference). If you're using only remote inference providers
+  # (OpenCode Zen, OpenRouter, OpenAI, etc.) and don't have Ollama, use
+  # `full-remote-inference` — it's the only profile with ollama explicitly off.
   case "${STACK_PROFILE}" in
     local-only)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=0
       ENABLE_LOCAL_SEARCH=0
       ENABLE_EMBEDDINGS=0
+      ENABLE_OLLAMA=1
       ;;
     local-code)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=1
       ENABLE_LOCAL_SEARCH=0
       ENABLE_EMBEDDINGS=0
+      ENABLE_OLLAMA=1
       ;;
     local-search)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=0
       ENABLE_LOCAL_SEARCH=1
       ENABLE_EMBEDDINGS=0
+      ENABLE_OLLAMA=1
       ;;
     local-search-code)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=1
       ENABLE_LOCAL_SEARCH=1
       ENABLE_EMBEDDINGS=0
+      ENABLE_OLLAMA=1
       ;;
     local-rag)
       ENABLE_STATIC_PREVIEW=0
       ENABLE_CODE_INTERPRETER=0
       ENABLE_LOCAL_SEARCH=0
       ENABLE_EMBEDDINGS=1
+      ENABLE_OLLAMA=1
       ;;
     full)
       ENABLE_STATIC_PREVIEW=1
       ENABLE_CODE_INTERPRETER=1
       ENABLE_LOCAL_SEARCH=1
       ENABLE_EMBEDDINGS=1
+      ENABLE_OLLAMA=1
+      ;;
+    full-remote-inference)
+      # Same as `full` but no local Ollama bridge — for operators who do
+      # all chat completion through remote providers (OpenCode Zen,
+      # OpenRouter, OpenAI, Anthropic, …). Skip this profile if you don't
+      # have host-side Ollama running.
+      ENABLE_STATIC_PREVIEW=1
+      ENABLE_CODE_INTERPRETER=1
+      ENABLE_LOCAL_SEARCH=1
+      ENABLE_EMBEDDINGS=1
+      ENABLE_OLLAMA=0
       ;;
     *)
       echo "ERROR: unsupported STACK_PROFILE='${STACK_PROFILE}'" >&2
-      echo "Valid profiles: local-only, local-code, local-search, local-search-code, local-rag, full" >&2
+      echo "Valid profiles: local-only, local-code, local-search, local-search-code, local-rag, full, full-remote-inference" >&2
       exit 1
       ;;
   esac
@@ -199,6 +221,9 @@ compose_up() {
   if [[ "${ENABLE_EMBEDDINGS}" == "1" ]]; then
     compose_files+=(-f optional/embeddings/compose.yml)
   fi
+  if [[ "${ENABLE_OLLAMA}" == "1" ]]; then
+    compose_files+=(-f optional/ollama/compose.yml)
+  fi
 
   (
     cd "${PROJECT_ROOT}"
@@ -234,6 +259,7 @@ ensure_secret_permissions() {
   ENABLE_CODE_INTERPRETER="${ENABLE_CODE_INTERPRETER}" \
   ENABLE_LOCAL_SEARCH="${ENABLE_LOCAL_SEARCH}" \
   ENABLE_EMBEDDINGS="${ENABLE_EMBEDDINGS}" \
+  ENABLE_OLLAMA="${ENABLE_OLLAMA}" \
     "${SCRIPT_DIR}/populate_stack_secrets_volume.sh"
 }
 
@@ -254,7 +280,7 @@ main() {
   prepare_local_search
   ensure_secret_permissions
 
-  log "Resolved stack profile: ${STACK_PROFILE:-manual-flags} (static_preview=${ENABLE_STATIC_PREVIEW}, code_interpreter=${ENABLE_CODE_INTERPRETER}, local_search=${ENABLE_LOCAL_SEARCH}, embeddings=${ENABLE_EMBEDDINGS})"
+  log "Resolved stack profile: ${STACK_PROFILE:-manual-flags} (static_preview=${ENABLE_STATIC_PREVIEW}, code_interpreter=${ENABLE_CODE_INTERPRETER}, local_search=${ENABLE_LOCAL_SEARCH}, embeddings=${ENABLE_EMBEDDINGS}, ollama=${ENABLE_OLLAMA})"
   compose_up
   log "LibreChat stack is up"
 }

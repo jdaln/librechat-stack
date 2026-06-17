@@ -143,15 +143,18 @@ Each overlay adds a `-f` compose file. Enable individually with env flags, or pi
 ### Stack Profiles
 
 ```bash
-STACK_PROFILE=local-only        ./scripts/start_stack.sh   # base only
-STACK_PROFILE=local-code        ./scripts/start_stack.sh   # + code interpreter
-STACK_PROFILE=local-search      ./scripts/start_stack.sh   # + web search
-STACK_PROFILE=local-search-code ./scripts/start_stack.sh   # both
-STACK_PROFILE=local-rag         ./scripts/start_stack.sh   # + local embeddings for RAG
-STACK_PROFILE=full              ./scripts/start_stack.sh   # everything incl. static preview
+STACK_PROFILE=local-only             ./scripts/start_stack.sh   # base + ollama bridge
+STACK_PROFILE=local-code             ./scripts/start_stack.sh   # + code interpreter
+STACK_PROFILE=local-search           ./scripts/start_stack.sh   # + web search
+STACK_PROFILE=local-search-code      ./scripts/start_stack.sh   # both above
+STACK_PROFILE=local-rag              ./scripts/start_stack.sh   # + local embeddings for RAG
+STACK_PROFILE=full                   ./scripts/start_stack.sh   # everything incl. static preview
+STACK_PROFILE=full-remote-inference  ./scripts/start_stack.sh   # `full` minus the Ollama bridge
 ```
 
-Without `STACK_PROFILE`, the script checks `ENABLE_CODE_INTERPRETER`, `ENABLE_LOCAL_SEARCH`, `ENABLE_EMBEDDINGS`, and `ENABLE_STATIC_PREVIEW` individually.
+**All standard profiles assume Ollama is running on the host** — they enable the `ollama-proxy` bridge by default. If you only use remote inference (OpenCode Zen / OpenRouter / OpenAI / Anthropic / …) and have no host-side Ollama, use **`full-remote-inference`** — it's the only profile with `ollama` explicitly off.
+
+Without `STACK_PROFILE`, the script checks `ENABLE_CODE_INTERPRETER`, `ENABLE_LOCAL_SEARCH`, `ENABLE_EMBEDDINGS`, `ENABLE_OLLAMA`, and `ENABLE_STATIC_PREVIEW` individually.
 
 ---
 
@@ -250,6 +253,40 @@ The overlay also rewires `rag_api`: when `ENABLE_EMBEDDINGS=1`, `RAG_OPENAI_BASE
 - Hardened identically to other stack services: `read_only: true`, `cap_drop: ALL`, `no-new-privileges`, runs as UID 10001.
 - Exposes OpenAI's `/v1/embeddings` shape; `rag_api` (which uses the OpenAI client) talks to it without code changes.
 - `MAX_BATCH_SIZE=64` by default — increase via `EMBEDDINGS_MAX_BATCH` if you index large corpora.
+
+</details>
+
+---
+
+### Ollama bridge (local LLMs on the host)
+
+If you're already running [Ollama](https://ollama.com/) on the host (macOS native build with Metal acceleration, or wherever), this overlay surfaces every model it has pulled inside LibreChat as the **`Ollama`** custom endpoint.
+
+```bash
+# Ensure ollama is running on the host first
+ollama list           # should show your models
+ENABLE_OLLAMA=1 ./scripts/start_stack.sh
+```
+
+In LibreChat the new endpoint will appear in the model picker; `fetch: true` populates the model list automatically from whatever the host has pulled.
+
+```bash
+# Verify end-to-end (LibreChat → ollama-proxy → host → Ollama)
+docker exec LibreChat python3 -c "
+import urllib.request, json
+op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+print(json.loads(op.open('http://ollama-proxy:11434/v1/models', timeout=5).read())['data'])
+"
+```
+
+<details>
+<summary>Implementation notes</summary>
+
+- `ollama-proxy` is a tiny Caddy reverse-proxy container — same pattern as `code-interpreter-proxy`. It listens on `:11434` and forwards to `host.docker.internal:11434`.
+- LibreChat (and every other in-stack service) sits on `internal: true` networks, so there's no IP route to the host bridge gateway from `lan`. The proxy is on two networks: `lan` (to face LibreChat) plus a dedicated narrow bridge `ollama_egress` (to face the host). Only `ollama-proxy` lives on `ollama_egress` — asserted in the smoke. See `docs/egress-policy.md` for the threat model.
+- The Caddyfile rewrites `Host` to `127.0.0.1:11434` because Ollama's built-in host-allowlist (DNS-rebinding defense) silently 403s any other Host header.
+- No API key required — Ollama doesn't enforce auth, and the proxy is reachable only from inside the stack.
+- Models are loaded into RAM lazily on first use. The first request to a cold model can take 30s+ on consumer hardware; subsequent calls are warm.
 
 </details>
 

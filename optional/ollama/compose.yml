@@ -1,0 +1,78 @@
+x-json-logging: &json_logging
+  driver: json-file
+  options:
+    max-size: ${DOCKER_LOG_MAX_SIZE:-10m}
+    max-file: ${DOCKER_LOG_MAX_FILE:-3}
+
+x-harden: &harden
+  read_only: true
+  cap_drop: ["ALL"]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 200
+  ulimits:
+    nofile: { soft: 1024, hard: 2048 }
+
+networks:
+  # Narrow bridge used by ollama-proxy ONLY. Required because `lan` is
+  # `internal: true` (no default route), so a container on `lan` alone can't
+  # reach host.docker.internal even with the right /etc/hosts entry.
+  #
+  # Masquerading stays enabled here because outbound packets to the Docker
+  # host gateway need their source IP NAT'd to reach the host successfully.
+  # Isolation is enforced by keeping every other service off this network
+  # (asserted in the smoke) and by ollama-proxy's own hardening: read-only
+  # rootfs, cap_drop ALL, a Caddyfile that only proxies a single upstream.
+  ollama_egress:
+    ipam:
+      config:
+        - subnet: 172.31.34.0/24
+
+services:
+  # Bridge: gives LibreChat (on internal-only networks) a path to the host's
+  # Ollama daemon. Same shape as code-interpreter-proxy. The host route uses
+  # the `host.docker.internal:host-gateway` extra_hosts entry — Docker
+  # injects the Colima host IP (e.g. 192.168.5.2) into /etc/hosts inside
+  # this container.
+  ollama-proxy:
+    <<: *harden
+    image: caddy:2.11.3-alpine@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
+    container_name: ollama-proxy
+    restart: always
+    cap_add:
+      - NET_BIND_SERVICE
+    command: ["caddy", "run", "--config", "/run/secrets/ollama_proxy_caddyfile", "--adapter", "caddyfile"]
+    extra_hosts:
+      # `host-gateway` is Docker's portable way of pointing at the host
+      # from inside a container — on Colima this resolves to the VM's
+      # gateway IP (typically 192.168.5.2 on the vz network).
+      - "host.docker.internal:host-gateway"
+    networks:
+      # `lan` is how LibreChat reaches the proxy.
+      # `ollama_egress` is the dedicated bridge that gives us a default
+      # route to the Docker host gateway (host.docker.internal). Without
+      # this second attachment the proxy resolves the host name but has
+      # no path to ping the host (lan is internal: true).
+      - lan
+      - ollama_egress
+    volumes:
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: ollama-proxy
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "wget -qO- --timeout=5 http://127.0.0.1:11434/api/tags >/dev/null"
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 15s
+    mem_limit: "128m"
+    cpus: "0.5"
+    tmpfs:
+      - "/tmp:size=64m"
+      - "/config:size=16m"
+      - "/data:size=16m"
+    logging: *json_logging

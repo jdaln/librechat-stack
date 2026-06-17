@@ -1201,4 +1201,42 @@ print(len(d['data'][0]['embedding']))
   fi
 fi
 
+# Ollama bridge is opt-in. Probe only when enabled.
+if docker ps --format '{{.Names}}' | grep -q '^ollama-proxy$'; then
+  log "Checking ollama bridge isolation + reachability"
+  # Invariant: only ollama-proxy is on the ollama_egress bridge. Any other
+  # container on this network would have an unintended path to the host
+  # gateway (and through it, to the public internet via NAT).
+  oe_members="$(
+    docker network inspect librechat-stack_ollama_egress \
+      --format '{{range .Containers}}{{println .Name}}{{end}}' | tr -d '\r' | awk 'NF { print $1 }' | sort | paste -sd ' ' -
+  )"
+  if [[ "${oe_members}" != "ollama-proxy" ]]; then
+    echo "Only ollama-proxy should be attached to librechat-stack_ollama_egress; found: ${oe_members}" >&2
+    exit 1
+  fi
+  # Functional probe: LibreChat → ollama-proxy → host's Ollama /v1/models.
+  ollama_result="$(
+    run_with_timeout "${SMOKE_INTERNAL_HTTP_PROBE_TIMEOUT:-90}" docker exec LibreChat python3 -c "
+import json, sys, urllib.request, urllib.error
+op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+try:
+    r = op.open('http://ollama-proxy:11434/v1/models', timeout=10)
+    d = json.loads(r.read())
+    n = len(d.get('data', []))
+    print(f'OLLAMA models={n}')
+    sys.exit(0 if n > 0 else 1)
+except urllib.error.HTTPError as e:
+    print(f'OLLAMA http_error={e.code}', file=sys.stderr); sys.exit(1)
+except Exception as e:
+    print(f'OLLAMA error={type(e).__name__}', file=sys.stderr); sys.exit(1)
+" 2>&1
+  )"
+  printf '%s\n' "${ollama_result}"
+  if ! grep -qE 'OLLAMA models=[1-9]' <<<"${ollama_result}"; then
+    echo "ollama-proxy probe failed — bridge to host's Ollama isn't healthy" >&2
+    exit 1
+  fi
+fi
+
 log "Smoke checks passed"

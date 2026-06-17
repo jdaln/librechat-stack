@@ -89,8 +89,8 @@ x-proxy-env: &proxy_env
   # NO_PROXY values can't clobber each other when multiple overlays are
   # active (compose env-key merge = last-write-wins, not append).
   # Unused names when an overlay is off are harmless.
-  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api,code-interpreter-proxy,searxng-auth,jina-reranker,firecrawl-api,searxng,searxng-valkey,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,embeddings}
-  no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api,code-interpreter-proxy,searxng-auth,jina-reranker,firecrawl-api,searxng,searxng-valkey,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,embeddings}
+  NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api,code-interpreter-proxy,searxng-auth,jina-reranker,firecrawl-api,searxng,searxng-valkey,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,embeddings,ollama-proxy}
+  no_proxy: ${NO_PROXY:-localhost,127.0.0.1,::1,mongodb,chat-mongodb,meilisearch,vectordb,rag_api,sandpack,sandpack-static,caddy-static-proxy,api-proxy,egress-proxy,code-interpreter-api,code-interpreter-proxy,searxng-auth,jina-reranker,firecrawl-api,searxng,searxng-valkey,firecrawl-redis,firecrawl-rabbitmq,firecrawl-postgres,firecrawl-playwright,embeddings,ollama-proxy}
 
 services:
   # ──────────────────────────────────────────────────────────────────────────────

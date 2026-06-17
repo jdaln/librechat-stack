@@ -1,0 +1,33 @@
+{
+  # auto_https off — TLS isn't terminated here; this proxy only listens on
+  # internal Docker networks.
+  auto_https off
+  log {
+    level WARN
+  }
+}
+
+# Reverse proxy that bridges the internal `lan` network to the host's Ollama
+# process. LibreChat sits on internal-only networks and has no path to the
+# Docker bridge gateway, so it talks to this proxy at
+# http://ollama-proxy:11434 — which we resolve to host.docker.internal:11434
+# (the Colima host) via the extra_hosts entry in compose.yml.
+#
+# Ollama is OpenAI-compatible at /v1, so LibreChat's custom-endpoint
+# configuration in librechat.yaml uses the standard OpenAI request shape.
+:11434 {
+  reverse_proxy http://host.docker.internal:11434 {
+    # Ollama enforces a host-allowlist as defense against DNS rebinding.
+    # The default allowlist is loopback only; any other Host header gets
+    # a silent 403. Rewrite Host to 127.0.0.1 so the upstream sees a
+    # loopback-shaped request and serves us. This is safe — the connection
+    # itself is still over the Docker bridge.
+    header_up Host 127.0.0.1:11434
+    # Generous timeouts — local LLM inference can take minutes for the first
+    # token on cold models.
+    transport http {
+      dial_timeout            5s
+      response_header_timeout 5m
+    }
+  }
+}

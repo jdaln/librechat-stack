@@ -15,6 +15,7 @@ under what rules. Source of truth: `optional/egress-proxy/squid.conf` +
 | `chat-meilisearch`      | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
 | `vectordb`              | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
 | `embeddings`            | ❌          | ✅             | **Allowlist** (LAN policy) — unused, model is baked into the image at build time |
+| `ollama-proxy`          | ✅ (host only) | ✅          | **Bridge to host** — see *Ollama bridge* note below |
 | `searxng`               | ❌          | ✅             | **Broad** (search_egress policy)           |
 | `firecrawl-api`         | ❌          | ✅             | **Broad** (search_egress policy)           |
 | `firecrawl-playwright`  | ❌          | ✅             | **Broad** (search_egress policy)           |
@@ -84,6 +85,38 @@ against arbitrary result domains. The universal deny rules still apply:
 
 So `searxng` can scrape e.g. `https://news.ycombinator.com`, but cannot use
 the proxy to reach `192.168.1.1` or `localhost` on the host.
+
+## Ollama bridge
+
+The `ollama-proxy` container (enabled by `ENABLE_OLLAMA=1`) is the one
+exception to "everything internal is on `lan` or isolated". It lives on
+two networks:
+
+- **`lan`** — so LibreChat (which never leaves `lan`) can reach it like
+  any other in-stack service: `http://ollama-proxy:11434/v1`.
+- **`ollama_egress`** (new, narrow bridge) — gives the container an IP
+  route to `host.docker.internal` (the Colima/Docker host gateway) so it
+  can reverse-proxy LibreChat's request to the host's Ollama daemon at
+  `127.0.0.1:11434`. NAT/masquerade is enabled on this bridge because
+  outbound packets to the host gateway need their source rewritten.
+
+This means **`ollama-proxy` can technically reach the public internet**
+(masquerade is on), bypassing Squid. Three mitigations preserve the
+overall posture:
+
+1. **Only `ollama-proxy` is on `ollama_egress`** — asserted in the
+   smoke. No other container ever sees this bridge.
+2. **`ollama-proxy` is `read_only: true`, `cap_drop: ALL`** — same
+   hardening as every other proxy in the stack. There's no shell or
+   write target inside.
+3. **The Caddyfile has one upstream** — `http://host.docker.internal:11434`.
+   No dynamic destinations, no path that fans out elsewhere.
+
+Net: a compromised LibreChat or `ollama-proxy` would have to break out
+of the read-only container AND rewrite Caddy's config in memory to
+exfiltrate via this path. The cost-to-benefit of keeping ollama-proxy
+on a wide-open bridge is high (every other path remains as before), so
+we accept this single-container exception.
 
 ## Verifying live
 
