@@ -308,6 +308,31 @@ The dynamic Sandpack bundler URL remains `http://127.0.0.1:80`, but that ingress
 
 ---
 
+## Stopping the stack
+
+```bash
+./scripts/stop_stack.sh                       # default: full shutdown (containers + Colima VM)
+./scripts/stop_stack.sh --pause               # quick pause, VM stays up (fastest restart)
+./scripts/stop_stack.sh --keep-colima         # remove containers but keep the VM running
+```
+
+**Your data is preserved in every mode** — `docker volume rm` is not invoked. The 15 named volumes that hold state (chat history in `mongo_data`, RAG vectors in `pgdata2`, uploaded files in `lbc_api_uploads`, the Jina model cache, conversation search indexes in `meili_data`, code-interpreter sandboxes, runtime secrets, etc.) stay on disk and are picked up automatically on the next `start_stack.sh`.
+
+Stop modes:
+
+| Mode | Command | What happens | Host RAM | Restart speed |
+|---|---|---|---|---|
+| **`down` + colima stop** *(default)* | `./scripts/stop_stack.sh` | Containers + networks removed AND Colima VM stopped. | All freed | Full bring-up, ~40-60s |
+| **`down`, keep VM** | `./scripts/stop_stack.sh --keep-colima` | Containers + networks removed; Colima VM keeps its allocated RAM. | Most freed | ~30s |
+| **`pause`** | `./scripts/stop_stack.sh --pause` | Containers stopped but kept around; VM stays up (implicit). | Mostly held | ~5s |
+
+The script doesn't accept a `-v` / `--remove-volumes` flag on purpose — wiping state should be a deliberate two-step process, not a tab-complete away. To start fresh:
+
+```bash
+./scripts/stop_stack.sh
+docker volume rm $(docker volume ls -q --filter name=librechat-stack_)
+```
+
 ## Autostart on Reboot
 
 ```bash
