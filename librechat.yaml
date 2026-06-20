@@ -95,7 +95,7 @@ modelSpecs:
     # roughly the same in unified memory on Apple Silicon.
     - name: "ollama-gemma4-31b"
       label: "Gemma 4 31B MLX (Ollama)"
-      default: true
+      default: false
       description: "Local Gemma 4 31B via host Ollama (Apple MLX). 20GB, 256K context. Highest quality of the local set."
       preset:
         endpoint: "Ollama"
@@ -113,7 +113,7 @@ modelSpecs:
         greeting: "Gemma 4 26B MLX preset is active via host Ollama.\n"
     - name: "ollama-gemma4-12b"
       label: "Gemma 4 12B MLX (Ollama)"
-      default: false
+      default: true
       description: "Local Gemma 4 12B via host Ollama (Apple MLX). 6.8GB, 256K context — good speed/quality balance."
       preset:
         endpoint: "Ollama"
