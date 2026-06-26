@@ -82,6 +82,11 @@ endpoints:
           - "gemma4:12b-mlx"
           - "gemma4:e4b-mlx"
           - "gemma4:e2b-mlx"
+          - "qwen3.6:27b-mlx"
+          - "mistral-nemo:12b"
+          - "granite4.1:8b"
+          - "olmo-3:7b-think"
+          - "olmo-3:7b-instruct"
         fetch: true
 
 modelSpecs:
@@ -138,6 +143,53 @@ modelSpecs:
         model: "gemma4:e2b-mlx"
         temperature: 0.2
         greeting: "Gemma 4 E2B MLX preset is active via host Ollama.\n"
+    # Other local families pulled into the host Ollama. Pull on the host
+    # with `ollama pull <name>` before selecting these.
+    - name: "ollama-qwen36-27b"
+      label: "Qwen 3.6 27B MLX (Ollama)"
+      default: false
+      description: "Local Qwen 3.6 27B via host Ollama (Apple MLX). 19GB. Strong reasoning/coding."
+      preset:
+        endpoint: "Ollama"
+        model: "qwen3.6:27b-mlx"
+        temperature: 0.2
+        greeting: "Qwen 3.6 27B MLX preset is active via host Ollama.\n"
+    - name: "ollama-mistral-nemo-12b"
+      label: "Mistral Nemo 12B (Ollama)"
+      default: false
+      description: "Local Mistral Nemo 12B via host Ollama. 7.1GB. General-purpose, good multilingual."
+      preset:
+        endpoint: "Ollama"
+        model: "mistral-nemo:12b"
+        temperature: 0.2
+        greeting: "Mistral Nemo 12B preset is active via host Ollama.\n"
+    - name: "ollama-granite41-8b"
+      label: "Granite 4.1 8B (Ollama)"
+      default: false
+      description: "Local IBM Granite 4.1 8B via host Ollama. 5.3GB. Enterprise/instruction-tuned."
+      preset:
+        endpoint: "Ollama"
+        model: "granite4.1:8b"
+        temperature: 0.2
+        greeting: "Granite 4.1 8B preset is active via host Ollama.\n"
+    - name: "ollama-olmo3-7b-think"
+      label: "OLMo 3 7B Think (Ollama)"
+      default: false
+      description: "Local OLMo 3 7B (reasoning/think variant) via host Ollama. 4.5GB. Fully open model."
+      preset:
+        endpoint: "Ollama"
+        model: "olmo-3:7b-think"
+        temperature: 0.2
+        greeting: "OLMo 3 7B Think preset is active via host Ollama.\n"
+    - name: "ollama-olmo3-7b-instruct"
+      label: "OLMo 3 7B Instruct (Ollama)"
+      default: false
+      description: "Local OLMo 3 7B (instruct variant) via host Ollama. 4.5GB. Fully open model."
+      preset:
+        endpoint: "Ollama"
+        model: "olmo-3:7b-instruct"
+        temperature: 0.2
+        greeting: "OLMo 3 7B Instruct preset is active via host Ollama.\n"
 
 actions:
   allowedDomains:

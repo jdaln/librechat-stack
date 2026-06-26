@@ -72,8 +72,8 @@ services:
       # overrides would clobber each other in last-write-wins compose merge).
       SEARXNG_INSTANCE_URL: ${SEARXNG_INSTANCE_URL_INTERNAL:-http://searxng-auth:8080}
       SEARXNG_API_KEY: ${SEARXNG_API_KEY:?set SEARXNG_API_KEY in .env}
-      LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-3}
-      LIBRECHAT_WEB_SEARCH_MAX_SOURCES: ${LIBRECHAT_WEB_SEARCH_MAX_SOURCES:-2}
+      LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-6}
+      LIBRECHAT_WEB_SEARCH_MAX_SOURCES: ${LIBRECHAT_WEB_SEARCH_MAX_SOURCES:-4}
       LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT:-2}
       LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT:-8000}
       LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT:-300}
@@ -476,10 +476,12 @@ services:
       context: .
       dockerfile: optional/local-search/jina/Dockerfile
       args:
-        JINA_RERANKER_BASE_IMAGE: ${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-tiny-en}
+        JINA_RERANKER_BASE_IMAGE: ${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-v2-multi}
     image: librechat-stack/jina-reranker-runtime:local
     container_name: jina-reranker
-    mem_limit: "1g"
+    # 2g: the v2-base-multilingual reranker is ~1.1GB on disk and needs
+    # ~1.5GB resident once onnxruntime loads it. The old tiny model fit in 1g.
+    mem_limit: "2g"
     cpus: "1.0"
     restart: always
     # No env_file: a third-party image only needs the variables listed below,
@@ -487,13 +489,31 @@ services:
     environment:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8000
-      MODEL_NAME: ${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v1-tiny-en}
+      # Default reranker: jinaai/jina-reranker-v2-base-multilingual.
+      # Strongest of the fastembed cross-encoders and broadly multilingual,
+      # which fixes cross-locale noise (off-topic foreign-language hits) in
+      # web-search results. NOTE: this model is CC-BY-NC-4.0 (non-commercial).
+      # For commercial deployments, override to a permissive reranker, e.g.
+      # JINA_RERANKER_MODEL_NAME=BAAI/bge-reranker-base (MIT) — and rebuild
+      # the image via scripts/prepare_jina_reranker_image.sh.
+      MODEL_NAME: ${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v2-base-multilingual}
       CACHE_DIR: /app/.cache
       TOKENIZERS_PARALLELISM: "false"
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
+      # Force offline: the model is baked into the image at build time and
+      # this container has no WAN egress. Newer fastembed/huggingface_hub
+      # does an online revision check on load that would otherwise fail with
+      # a DNS error and silently drop to lexical-fallback reranking.
+      HF_HUB_OFFLINE: "1"
+      TRANSFORMERS_OFFLINE: "1"
       OMP_NUM_THREADS: ${JINA_RERANKER_OMP_NUM_THREADS:-1}
-      JINA_RERANKER_LOAD_MODEL: ${JINA_RERANKER_LOAD_MODEL:-0}
+      # 1 = actually load the cross-encoder at startup. With 0 (the upstream
+      # default) the server NEVER loads the model and every request silently
+      # uses lexical keyword-overlap scoring (":lexical-fallback") — which is
+      # why off-topic results leaked into search. Loading the model is the
+      # whole point of having a reranker; keep this on.
+      JINA_RERANKER_LOAD_MODEL: ${JINA_RERANKER_LOAD_MODEL:-1}
       JINA_RERANKER_MAX_BATCH_SIZE: ${JINA_RERANKER_MAX_BATCH_SIZE:-2}
       JINA_RERANKER_LOG_LEVEL: ${JINA_RERANKER_LOG_LEVEL:-WARNING}
     volumes:

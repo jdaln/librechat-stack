@@ -5,8 +5,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 JINA_RERANKER_GIT_URL="${JINA_RERANKER_GIT_URL:-https://github.com/freshe/librechat-jina-reranker-api.git}"
 JINA_RERANKER_GIT_REF="${JINA_RERANKER_GIT_REF:-da638699215fc89814e623b3163f73dab859885c}"
-JINA_RERANKER_MODEL_NAME="${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v1-tiny-en}"
-JINA_RERANKER_IMAGE="${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-tiny-en}"
+# Default reranker: jinaai/jina-reranker-v2-base-multilingual (CC-BY-NC-4.0,
+# non-commercial). Strongest fastembed cross-encoder + broadly multilingual.
+# For commercial use, override both vars to a permissive model, e.g.:
+#   JINA_RERANKER_MODEL_NAME=BAAI/bge-reranker-base
+#   JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-bge-base
+# (the image tag must change so a fresh model is baked instead of reusing cache)
+JINA_RERANKER_MODEL_NAME="${JINA_RERANKER_MODEL_NAME:-jinaai/jina-reranker-v2-base-multilingual}"
+JINA_RERANKER_IMAGE="${JINA_RERANKER_IMAGE:-librechat-jina-reranker:da638699-v2-multi}"
 CACHE_ROOT="${JINA_RERANKER_CACHE_ROOT:-${HOME}/Library/Caches/librechat-stack}"
 SOURCE_DIR="${CACHE_ROOT}/librechat-jina-reranker-${JINA_RERANKER_GIT_REF:0:12}-src"
 BUILD_DIR="${CACHE_ROOT}/librechat-jina-reranker-${JINA_RERANKER_GIT_REF:0:12}-build"

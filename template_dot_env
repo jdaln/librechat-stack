@@ -250,17 +250,24 @@ FIRECRAWL_RABBITMQ_IMAGE=rabbitmq:4.3.0-management@sha256:8f3ab1dc6fb3b17ff59ba4
 
 JINA_API_KEY=local-jina
 JINA_API_URL=http://jina-reranker:8000/librechat/v1/rerank
-JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v1-tiny-en
+# Web-search reranker, baked into the jina-reranker image at build time.
+# Default is jina-reranker-v2-base-multilingual: strongest fastembed
+# cross-encoder + broadly multilingual (fixes cross-locale noise in search
+# results). It is CC-BY-NC-4.0 (NON-commercial). For commercial use, switch
+# to a permissive model and change the IMAGE tag so a fresh model is baked:
+#   JINA_RERANKER_MODEL_NAME=BAAI/bge-reranker-base            # MIT
+#   JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-bge-base
+JINA_RERANKER_MODEL_NAME=jinaai/jina-reranker-v2-base-multilingual
 JINA_RERANKER_GIT_URL=https://github.com/freshe/librechat-jina-reranker-api.git
 JINA_RERANKER_GIT_REF=da638699215fc89814e623b3163f73dab859885c  # main
-JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-tiny-en
+JINA_RERANKER_IMAGE=librechat-jina-reranker:da638699-v2-multi
 JINA_RERANKER_LOG_LEVEL=WARNING
 JINA_RERANKER_MAX_BATCH_SIZE=2
 JINA_RERANKER_OMP_NUM_THREADS=1
 
 # Bounded local-search defaults to avoid oversized model/tool context.
-LIBRECHAT_WEB_SEARCH_RESULT_COUNT=3
-LIBRECHAT_WEB_SEARCH_MAX_SOURCES=2
+LIBRECHAT_WEB_SEARCH_RESULT_COUNT=6
+LIBRECHAT_WEB_SEARCH_MAX_SOURCES=4
 LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT=2
 LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT=8000
 LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT=300
