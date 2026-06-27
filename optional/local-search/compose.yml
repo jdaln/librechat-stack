@@ -49,6 +49,13 @@ services:
     environment:
       EGRESS_DNS_ENABLE: "1"  #TODO check what we can  do better
       EGRESS_DNS_LISTEN_ADDRESS: 172.31.33.2
+      # The default upstream (1.1.1.1) needs UDP/53 egress to the public internet,
+      # which many cloud/hardened hosts firewall — then the whole search tier fails
+      # to resolve any name. 127.0.0.11 is the egress-proxy's own embedded Docker
+      # resolver, which forwards to whatever DNS the host itself already uses, so it
+      # works regardless of public-DNS rules. Override EGRESS_DNS_UPSTREAMS with a
+      # public resolver (1.1.1.1) or your internal DNS IP if you prefer.
+      EGRESS_DNS_UPSTREAMS: ${EGRESS_DNS_UPSTREAMS:-127.0.0.11}
     networks:
       lan: {}
       wan: {}
@@ -314,7 +321,12 @@ services:
     logging: *json_logging
 
   firecrawl-playwright:
-    image: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest@sha256:9e0737bc09df28275aab29726b1c0824a7725113945434e843385d487b7f7ec6}
+    build:
+      context: .
+      dockerfile: optional/local-search/firecrawl-playwright/Dockerfile
+      args:
+        FIRECRAWL_PLAYWRIGHT_IMAGE: ${FIRECRAWL_PLAYWRIGHT_IMAGE:-ghcr.io/firecrawl/playwright-service:latest@sha256:9e0737bc09df28275aab29726b1c0824a7725113945434e843385d487b7f7ec6}
+    image: librechat-stack/firecrawl-playwright-runtime:local
     container_name: firecrawl-playwright
     read_only: true
     cap_drop: ["ALL"]
