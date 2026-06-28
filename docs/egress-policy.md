@@ -9,16 +9,16 @@ under what rules. Source of truth: `optional/egress-proxy/squid.conf` +
 | Container               | Direct WAN | Path to Squid | Squid policy applied                       |
 |-------------------------|:----------:|:-------------:|--------------------------------------------|
 | `egress-proxy`          | ✅          | n/a           | (it *is* Squid)                            |
-| `LibreChat` (api)       | ❌          | ✅             | **Allowlist** (LAN policy)                 |
-| `rag_api`               | ❌          | ✅             | **Allowlist** (LAN policy)                 |
-| `chat-mongodb`          | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
-| `chat-meilisearch`      | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
-| `vectordb`              | ❌          | ✅             | **Allowlist** (LAN policy) — unused        |
-| `embeddings`            | ❌          | ✅             | **Allowlist** (LAN policy) — unused, model is baked into the image at build time |
-| `ollama-proxy`          | ✅ (host only) | ✅          | **Bridge to host** — see *Ollama bridge* note below |
-| `searxng`               | ❌          | ✅             | **Broad** (search_egress policy)           |
-| `firecrawl-api`         | ❌          | ✅             | **Broad** (search_egress policy)           |
-| `firecrawl-playwright`  | ❌          | ✅             | **Broad** (search_egress policy)           |
+| `LibreChat` (api)       | ❌          | ✅ (`api_egress`) | **Allowlist** (LAN policy)              |
+| `rag_api`               | ❌          | ✅ (`api_egress`) | **Allowlist** (LAN policy)              |
+| `chat-mongodb`          | ❌          | ❌             | Isolated (lan only — no path to proxy)     |
+| `chat-meilisearch`      | ❌          | ❌             | Isolated (lan only — no path to proxy)     |
+| `vectordb`              | ❌          | ❌             | Isolated (lan only — no path to proxy)     |
+| `embeddings`            | ❌          | ❌             | Isolated (lan only; model baked in at build time) |
+| `ollama-proxy`          | ✅ (host only) | ❌          | **Bridge to host** — see *Ollama bridge* note below |
+| `searxng`               | ❌          | ✅ (`search_egress`) | **Broad** (search_egress policy)     |
+| `firecrawl-api`         | ❌          | ✅ (`search_egress`) | **Broad** (search_egress policy)     |
+| `firecrawl-playwright`  | ❌          | ✅ (`search_egress`) | **Broad** (search_egress policy)     |
 | `api-proxy`             | ❌          | ❌             | Isolated                                   |
 | `caddy-static-proxy`    | ❌          | ❌             | Isolated                                   |
 | `code-interpreter-api`  | ❌          | ❌             | Isolated                                   |
@@ -35,14 +35,23 @@ under what rules. Source of truth: `optional/egress-proxy/squid.conf` +
 | `searxng-valkey`        | ❌          | ❌             | Isolated                                   |
 
 "Path to Squid" = the container is on a network that includes `egress-proxy`.
-"unused" means the database containers *could* reach Squid by network topology
-but don't initiate outbound traffic in normal operation.
+
+**The proxy is deliberately kept off `lan`.** `egress-proxy` attaches only to
+`wan` (its sole internet leg), `api_egress` (where `api` + `rag_api` reach it),
+and `search_egress` (the search tier). The data stores — `chat-mongodb`,
+`chat-meilisearch`, `vectordb`, `embeddings` — live on `lan` *only*, which has
+no path to the proxy. So a compromised data store cannot use Squid as an
+egress relay: there is no network route to it, not merely an unused-but-open
+one. This is enforced in CI (`scripts/ci/smoke.sh` asserts `egress-proxy` is
+absent from `lan` and that `api_egress` is `internal`).
 
 ## What "Allowlist (LAN policy)" allows
 
-These rules apply to every client on `lan` (the LibreChat app, rag_api, the
-databases). They run *after* the universal deny rules (RFC1918, link-local,
-multicast, `localhost` / `.local` / `.internal`).
+These rules apply to the clients that can actually reach the proxy on
+`api_egress` — `LibreChat` (api) and `rag_api`. (The policy is named for
+historical reasons; the clients are no longer on `lan` with the proxy.)
+They run *after* the universal deny rules (RFC1918, link-local, multicast,
+`localhost` / `.local` / `.internal`).
 
 Exact domains in `optional/egress-proxy/allowed_domains.txt`:
 
@@ -120,20 +129,31 @@ we accept this single-container exception.
 
 ## Verifying live
 
-From any container with `bash` (uses `/dev/tcp` builtin):
+The GA LibreChat image ships no `bash`/`curl`, but it has `python3`. This
+runs a CONNECT through the proxy from the `api` container (which reaches it
+via `api_egress`):
 
 ```bash
-docker exec LibreChat bash -c '
-  for h in opencode.ai example.com; do
-    exec 3<>/dev/tcp/egress-proxy/3128
-    printf "CONNECT %s:443 HTTP/1.1\r\nHost: %s:443\r\n\r\n" "$h" "$h" >&3
-    read -t 5 line <&3
-    echo "$h -> $line"
-    exec 3<&- 3>&-
-  done
+docker exec LibreChat python3 -c '
+import socket
+def connect(host):
+    s = socket.create_connection(("egress-proxy", 3128), timeout=6)
+    s.sendall(f"CONNECT {host}:443 HTTP/1.1\r\nHost: {host}:443\r\n\r\n".encode())
+    line = s.recv(120).decode(errors="replace").split("\r\n")[0]; s.close(); return line
+for h in ["opencode.ai", "example.com"]:
+    print(f"{h} -> {connect(h)}")
 '
-# Expected: opencode.ai -> 200 Connection established
-#           example.com -> 403 Forbidden
+# Expected: opencode.ai -> HTTP/1.1 200 Connection established
+#           example.com -> HTTP/1.1 403 Forbidden
+```
+
+To confirm the **isolation** (a data store has no path to the proxy), the
+connect should hang/fail rather than reach Squid — `chat-mongodb` has bash:
+
+```bash
+docker exec chat-mongodb bash -c \
+  'timeout 5 bash -c "exec 3<>/dev/tcp/egress-proxy/3128" && echo REACHABLE || echo BLOCKED'
+# Expected: BLOCKED
 ```
 
 Swap `LibreChat` for `searxng` to see the broad policy: both return `200`.
