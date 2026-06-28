@@ -745,7 +745,7 @@ if ! grep -q '"com.docker.network.bridge.enable_ip_masquerade":"false"' <<<"${in
   echo "ingress network should have IP masquerading disabled: ${ingress_options}" >&2
   exit 1
 fi
-for internal_network in librechat-stack_api_frontend librechat-stack_sandpack_frontend librechat-stack_static_preview_net; do
+for internal_network in librechat-stack_api_frontend librechat-stack_sandpack_frontend librechat-stack_static_preview_net librechat-stack_api_egress; do
   net_internal="$(docker network inspect "${internal_network}" --format '{{.Internal}}')"
   if [[ "${net_internal}" != "true" ]]; then
     echo "${internal_network} should be internal" >&2
@@ -761,6 +761,18 @@ wan_containers="$(
 )"
 if [[ "${wan_containers}" != "egress-proxy" ]]; then
   echo "Only egress-proxy should be attached to librechat-stack_wan; found: ${wan_containers}" >&2
+  exit 1
+fi
+# Defense-in-depth: egress-proxy must NOT share `lan` with the data stores, so a
+# compromised store (mongodb/meilisearch/vectordb/embeddings) has no network path
+# to the proxy and cannot use it as an egress relay. api/rag_api reach the proxy
+# via the dedicated internal `api_egress` lane instead.
+lan_containers="$(
+  docker network inspect librechat-stack_lan \
+    --format '{{range .Containers}}{{println .Name}}{{end}}' | tr -d '\r' | awk 'NF { print $1 }' | sort | paste -sd ' ' -
+)"
+if grep -qw 'egress-proxy' <<<"${lan_containers}"; then
+  echo "egress-proxy must NOT be attached to librechat-stack_lan (data-store egress isolation); lan has: ${lan_containers}" >&2
   exit 1
 fi
 # Negative port-publish assertions for internal-only services. The behavioral

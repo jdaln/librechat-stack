@@ -55,6 +55,16 @@ networks:
         - subnet: 172.31.14.0/24
     driver_opts:
       com.docker.network.bridge.enable_icc: "false"
+  # API/RAG egress lane (internal): connects ONLY api, rag_api and egress-proxy.
+  # egress-proxy is deliberately kept OFF `lan` and reached here instead, so the
+  # data stores (mongodb/meilisearch/vectordb/embeddings, which stay on `lan`)
+  # have NO network path to the proxy and cannot use it as an egress relay even
+  # if compromised. Mirrors `search_egress` for the search tier.
+  api_egress:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.31.16.0/24
 
 volumes:
   stack_secrets:
@@ -106,7 +116,9 @@ services:
     container_name: egress-proxy
     command: ["-f", "/run/secrets/squid_conf", "-NYC"]
     networks:
-      - lan
+      # api_egress (not lan): only api/rag_api can reach the proxy. The data
+      # stores on lan must have no path to it. wan is its sole internet leg.
+      - api_egress
       - wan
     volumes:
       - type: volume
@@ -224,8 +236,9 @@ services:
         volume:
           subpath: api
     networks:
-      - lan    # internal comms (DBs, rag_api, egress-proxy)
+      - lan          # internal comms (DBs, rag_api)
       - api_frontend
+      - api_egress   # outbound via egress-proxy (egress-proxy is off `lan`)
     restart: always
     logging: *json_logging
     healthcheck:
@@ -448,8 +461,9 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
-    networks: 
-      - lan
+    networks:
+      - lan          # internal comms (vectordb, embeddings, api)
+      - api_egress   # outbound via egress-proxy (egress-proxy is off `lan`)
     restart: always
     # platform: linux/amd64
     volumes:

@@ -57,7 +57,9 @@ services:
       # public resolver (1.1.1.1) or your internal DNS IP if you prefer.
       EGRESS_DNS_UPSTREAMS: ${EGRESS_DNS_UPSTREAMS:-127.0.0.11}
     networks:
-      lan: {}
+      # api_egress (not lan): the proxy serves api/rag_api here, not on lan, so
+      # the lan data stores have no path to it. search tier uses search_egress.
+      api_egress: {}
       wan: {}
       search_egress:
         ipv4_address: 172.31.33.2
