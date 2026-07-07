@@ -12,6 +12,7 @@ oauth2.googleapis.com
 .openai.com
 .anthropic.com
 .openrouter.ai
+.tensorx.ai
 generativelanguage.googleapis.com
 iamcredentials.googleapis.com
 sts.googleapis.com

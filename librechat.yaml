@@ -45,6 +45,7 @@ endpoints:
   agents:
     allowedProviders:
       - Ollama
+      - TensorX
     capabilities:
       - tools
       - execute_code
@@ -89,10 +90,38 @@ endpoints:
           - "olmo-3:7b-instruct"
         fetch: true
 
+    # TensorX — OpenAI-compatible cloud endpoint. Reaches the internet via the
+    # egress-proxy allowlist, so `.tensorx.ai` must be present in
+    # optional/egress-proxy/allowed_domains.txt (added). The API key lives in
+    # .env as TENSORX_API_KEY and is injected here at runtime.
+    - name: "TensorX"
+      apiKey: "${TENSORX_API_KEY}"
+      baseURL: "https://api.tensorx.ai/v1"
+      modelDisplayLabel: "TensorX"
+      titleConvo: true
+      titleMethod: "completion"
+      titleModel: "deepseek/deepseek-v4-flash"
+      models:
+        # `fetch: true` queries /v1/models once a real key is set; the default
+        # keeps DeepSeek V4 Flash selectable on first boot.
+        default:
+          - "deepseek/deepseek-v4-flash"
+        fetch: true
+
 modelSpecs:
   enforce: false
   prioritize: false
   list:
+    # Cloud endpoint via TensorX (requires TENSORX_API_KEY in .env).
+    - name: "tensorx-deepseek-v4-flash"
+      label: "DeepSeek V4 Flash (TensorX)"
+      default: false
+      description: "DeepSeek V4 Flash via TensorX cloud API. 1M context, OpenAI-compatible. Requires TENSORX_API_KEY."
+      preset:
+        endpoint: "TensorX"
+        model: "deepseek/deepseek-v4-flash"
+        temperature: 1.0
+        greeting: "DeepSeek V4 Flash preset is active via TensorX.\n"
     # All five presets are Apple-MLX builds of Gemma 4, pulled into the
     # host Ollama. Pull on the host with:
     #   ollama pull gemma4:<size>-mlx
@@ -105,7 +134,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "gemma4:31b-mlx"
-        temperature: 0.2
+        temperature: 1.0
         greeting: "Gemma 4 31B MLX preset is active via host Ollama.\n"
     - name: "ollama-gemma4-26b"
       label: "Gemma 4 26B MLX (Ollama)"
@@ -114,7 +143,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "gemma4:26b-mlx"
-        temperature: 0.2
+        temperature: 1.0
         greeting: "Gemma 4 26B MLX preset is active via host Ollama.\n"
     - name: "ollama-gemma4-12b"
       label: "Gemma 4 12B MLX (Ollama)"
@@ -123,7 +152,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "gemma4:12b-mlx"
-        temperature: 0.2
+        temperature: 1.0
         greeting: "Gemma 4 12B MLX preset is active via host Ollama.\n"
     - name: "ollama-gemma4-e4b"
       label: "Gemma 4 E4B MLX (Ollama)"
@@ -132,7 +161,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "gemma4:e4b-mlx"
-        temperature: 0.2
+        temperature: 1.0
         greeting: "Gemma 4 E4B MLX preset is active via host Ollama.\n"
     - name: "ollama-gemma4-e2b"
       label: "Gemma 4 E2B MLX (Ollama)"
@@ -141,7 +170,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "gemma4:e2b-mlx"
-        temperature: 0.2
+        temperature: 1.0
         greeting: "Gemma 4 E2B MLX preset is active via host Ollama.\n"
     # Other local families pulled into the host Ollama. Pull on the host
     # with `ollama pull <name>` before selecting these.
@@ -152,7 +181,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "qwen3.6:27b-mlx"
-        temperature: 0.2
+        temperature: 1.0
         greeting: "Qwen 3.6 27B MLX preset is active via host Ollama.\n"
     - name: "ollama-mistral-nemo-12b"
       label: "Mistral Nemo 12B (Ollama)"
@@ -161,7 +190,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "mistral-nemo:12b"
-        temperature: 0.2
+        temperature: 0.3
         greeting: "Mistral Nemo 12B preset is active via host Ollama.\n"
     - name: "ollama-granite41-8b"
       label: "Granite 4.1 8B (Ollama)"
@@ -170,7 +199,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "granite4.1:8b"
-        temperature: 0.2
+        temperature: 0.0
         greeting: "Granite 4.1 8B preset is active via host Ollama.\n"
     - name: "ollama-olmo3-7b-think"
       label: "OLMo 3 7B Think (Ollama)"
@@ -179,7 +208,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "olmo-3:7b-think"
-        temperature: 0.2
+        temperature: 0.6
         greeting: "OLMo 3 7B Think preset is active via host Ollama.\n"
     - name: "ollama-olmo3-7b-instruct"
       label: "OLMo 3 7B Instruct (Ollama)"
@@ -188,7 +217,7 @@ modelSpecs:
       preset:
         endpoint: "Ollama"
         model: "olmo-3:7b-instruct"
-        temperature: 0.2
+        temperature: 0.6
         greeting: "OLMo 3 7B Instruct preset is active via host Ollama.\n"
 
 actions:
