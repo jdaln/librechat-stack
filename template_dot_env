@@ -163,6 +163,10 @@ EGRESS_PROXY_URL=http://egress-proxy:3128
 # Docker json-file log rotation applied to all stack containers.
 DOCKER_LOG_MAX_SIZE=10m
 DOCKER_LOG_MAX_FILE=3
+# The egress-proxy (squid audit log) keeps its own, larger retention:
+# 20m x 10 = 200MB. Size-based only; json-file has no time-based rotation.
+EGRESS_LOG_MAX_SIZE=20m
+EGRESS_LOG_MAX_FILE=10
 
 # Internal hosts that should bypass proxying.
 # The canonical list lives in docker-compose.yml (default value of this var);
@@ -250,7 +254,7 @@ FIRECRAWL_API_URL=http://firecrawl-api:3002
 # it is embedded in connection URLs.
 FIRECRAWL_POSTGRES_PASSWORD=24389_CHANGE_ME
 FIRECRAWL_VERSION=v2
-FIRECRAWL_LOG_LEVEL=warn
+FIRECRAWL_LOG_LEVEL=error
 FIRECRAWL_HARNESS_STARTUP_TIMEOUT_MS=1200000
 FIRECRAWL_BULL_AUTH_KEY=24389_CHANGE_ME
 FIRECRAWL_MAX_CONCURRENT_JOBS=1

@@ -128,7 +128,14 @@ services:
         volume:
           subpath: egress-proxy
     restart: always
-    logging: *json_logging
+    # Dedicated retention for the squid audit log (search-tier domains +
+    # denied attempts land here): 20m × 10 = 200MB. json-file rotation is
+    # size-based only; there is no time-based cap.
+    logging:
+      driver: json-file
+      options:
+        max-size: "${EGRESS_LOG_MAX_SIZE:-20m}"
+        max-file: "${EGRESS_LOG_MAX_FILE:-10}"
     healthcheck:
       # Squid must accept connections; when the local-search overlay enables
       # the embedded dnsmasq resolver, its TCP listener must be up too.
@@ -292,6 +299,10 @@ services:
         "--auth",
         "--bind_ip_all",
         "--quiet",
+        # Slow-op log lines (default >100ms) include command filters, which
+        # can carry user data; effectively disable them.
+        "--slowms",
+        "10000",
         "--wiredTigerCacheSizeGB",
         "0.25"
       ]

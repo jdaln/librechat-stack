@@ -20,6 +20,17 @@ function truncateText(text, maxChars) {
     return `${slice.slice(0, cutoff).trim()}...`;
 }
 
+// Scrape targets are logged as hostname only: full URLs (paths, query
+// strings) can reveal what users searched for and must stay out of logs.
+function redactUrl(url) {
+    try {
+        return new URL(url).hostname;
+    }
+    catch {
+        return '[unparseable-url]';
+    }
+}
+
 const chunker = {
     cleanText: (text) => {
         if (!text)
@@ -560,7 +571,7 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                             };
                         }
                         else {
-                            logger_.error(`Error scraping ${url}: ${response.error ?? 'Unknown error'}`);
+                            logger_.error(`Error scraping ${redactUrl(url)}: ${response.error ?? 'Unknown error'}`);
                         }
                         return {
                             url,
@@ -572,7 +583,7 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                         .then(async (result) => {
                         try {
                             if (result.error != null) {
-                                logger_.error(`Error scraping ${result.url}: ${result.content}`);
+                                logger_.error(`Error scraping ${redactUrl(result.url)}`);
                                 return {
                                     ...result,
                                 };
@@ -599,7 +610,9 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                         }
                     })
                         .catch((error) => {
-                        logger_.error(`Error scraping ${currentLink}:`, error);
+                        // error.message only — serializing the full error can embed
+                        // the request URL (axios config) in the log line.
+                        logger_.error(`Error scraping ${redactUrl(currentLink)}: ${error?.message ?? error}`);
                         return {
                             url: currentLink,
                             error: true,
