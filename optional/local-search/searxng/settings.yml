@@ -1,9 +1,50 @@
 use_default_settings:
   engines:
-    remove:
-      - ahmia
-      - google
-      - torch
+    # Curated engine set (replaces the old "defaults minus ahmia/google/torch").
+    # The LibreChat search patch no longer pins engines client-side, so this
+    # list is the single source of truth for what gets queried per category.
+    # Upstream defaults disable bing/qwant/mojeek (general) for junk/blocking
+    # reasons — bing web in particular returns cross-locale trending noise from
+    # proxy IPs, which is how off-topic sites leaked into search results.
+    # Google stays out: its scraping CAPTCHA-blocks datacenter egress IPs.
+    # Startpage proxies Google results, giving similar relevance without the blocks.
+    keep_only:
+      # general
+      - duckduckgo
+      - brave
+      - startpage
+      - qwant
+      - wikipedia
+      # images
+      - duckduckgo images
+      - brave.images
+      - startpage images
+      - qwant images
+      - bing images
+      # videos
+      - duckduckgo videos
+      - brave.videos
+      - qwant videos
+      - bing videos
+      # news
+      - duckduckgo news
+      - brave.news
+      - startpage news
+      - qwant news
+      - bing news
+
+engines:
+  # Qwant is disabled in upstream defaults (occasional API rate-limiting) but
+  # is strong for French/European content; if it 429s, SearXNG auto-suspends
+  # it without affecting the other engines.
+  - name: qwant
+    disabled: false
+  - name: qwant images
+    disabled: false
+  - name: qwant videos
+    disabled: false
+  - name: qwant news
+    disabled: false
 
 general:
   instance_name: "LibreChat Local Search"
@@ -18,7 +59,10 @@ search:
     - json
 
 outgoing:
-  request_timeout: 4.0
+  # 6s (was 4s): requests hop through the squid egress proxy, and the slower
+  # quality engines were timing out, leaving fast junk-prone responses to
+  # dominate the aggregation.
+  request_timeout: 6.0
   proxies:
     all://:
       - http://egress-proxy:3128

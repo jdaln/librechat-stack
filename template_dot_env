@@ -224,6 +224,25 @@ SEARXNG_BASE_URL=http://searxng:8080/
 SEARXNG_SECRET=24389_CHANGE_ME
 SEARXNG_IMAGE=searxng/searxng:latest@sha256:3eb2fcb2153e0b1f8e9f3457695ed3db1b1443d1dbc2b6d23121835d33fd50aa
 SEARXNG_VALKEY_IMAGE=valkey/valkey:9.0.4-alpine@sha256:d1cc70645bbcef743615463a2fa4616e841407545e18f560aed0c49671a90147
+# Search locale sent to SearXNG. 'auto' detects the query language and picks
+# the matching engine market; 'all' (old upstream default) mixes locales and
+# lets junk results through. Can be pinned (e.g. 'fr', 'de-CH').
+#SEARXNG_LANGUAGE=auto
+# Optional comma-separated engine pin sent with every query (bypasses the
+# curated set in optional/local-search/searxng/settings.yml). Leave unset.
+#SEARXNG_ENGINES=
+
+# --- Optional: Brave Search API instead of SearXNG -------------------------
+# Swaps the search backend at the patched-module level; librechat.yaml keeps
+# searchProvider: searxng (its schema doesn't validate other values), and the
+# scraper (Firecrawl) + reranker (Jina) pipeline is unchanged.
+# Requires a key from https://api-dashboard.search.brave.com — free tier: 1 req/s.
+# api.search.brave.com is already in optional/egress-proxy/allowed_domains.txt.
+#LIBRECHAT_SEARCH_PROVIDER_OVERRIDE=brave
+#BRAVE_API_KEY=your_brave_api_key
+# Optional Brave result region/language (e.g. CH / fr). Unset = Brave defaults.
+#BRAVE_COUNTRY=
+#BRAVE_SEARCH_LANG=
 
 FIRECRAWL_API_KEY=local-firecrawl
 FIRECRAWL_API_URL=http://firecrawl-api:3002

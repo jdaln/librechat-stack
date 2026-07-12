@@ -200,10 +200,19 @@ const createSearXNGAPI = (instanceUrl, apiKey) => {
                 format: 'json',
                 pageno: 1,
                 categories: category,
-                language: 'all',
+                // 'auto' lets SearXNG detect the query language and pick the
+                // matching engine market; upstream's 'all' returns cross-locale
+                // junk (notably from Bing when queried via a datacenter/proxy IP).
+                language: process.env.SEARXNG_LANGUAGE || 'auto',
                 safesearch: safeSearch,
-                engines: 'google,bing,duckduckgo',
             };
+            // Upstream pins engines=google,bing,duckduckgo, which collides with
+            // instances that curate their engine set server-side (google is
+            // removed in ours, silently leaving bing+ddg only). Only pin engines
+            // when explicitly configured; otherwise settings.yml decides.
+            if (process.env.SEARXNG_ENGINES) {
+                params.engines = process.env.SEARXNG_ENGINES;
+            }
             const headers = {
                 'Content-Type': 'application/json',
             };
@@ -322,16 +331,202 @@ const createSearXNGAPI = (instanceUrl, apiKey) => {
     };
     return { getSources };
 };
+// Brave Search API provider (https://api.search.brave.com). Not an upstream
+// LibreChat provider: librechat.yaml's webSearch schema only accepts
+// 'serper'/'searxng', so this is selected via LIBRECHAT_SEARCH_PROVIDER_OVERRIDE
+// (see createSearchAPI below) while the yaml keeps searchProvider: searxng.
+const createBraveAPI = (apiKey) => {
+    const config = {
+        apiKey: apiKey ?? process.env.BRAVE_API_KEY,
+        apiUrl: (process.env.BRAVE_API_URL || 'https://api.search.brave.com/res/v1').replace(/\/$/, ''),
+        timeout: 10000,
+    };
+    if (config.apiKey == null || config.apiKey === '') {
+        throw new Error('BRAVE_API_KEY is required for Brave Search API');
+    }
+    const stripHtml = (text) => (text ?? '').replace(/<[^>]+>/g, '');
+    const toAttribution = (result) => {
+        if (result.meta_url?.hostname) {
+            return result.meta_url.hostname;
+        }
+        try {
+            return new URL(result.url ?? '').hostname;
+        }
+        catch {
+            return '';
+        }
+    };
+    const getSources = async ({ query, date, safeSearch, numResults = DEFAULT_SEARCH_RESULT_COUNT, type, }) => {
+        if (!query.trim()) {
+            return { success: false, error: 'Query cannot be empty' };
+        }
+        try {
+            let endpoint = `${config.apiUrl}/web/search`;
+            if (type === 'images') {
+                endpoint = `${config.apiUrl}/images/search`;
+            }
+            else if (type === 'videos') {
+                endpoint = `${config.apiUrl}/videos/search`;
+            }
+            else if (type === 'news') {
+                endpoint = `${config.apiUrl}/news/search`;
+            }
+            const safe = ['off', 'moderate', 'strict'];
+            let safesearch = safe[safeSearch ?? 1];
+            if (type === 'images' && safesearch === 'moderate') {
+                // The images endpoint only accepts off|strict.
+                safesearch = 'strict';
+            }
+            const params = {
+                q: query,
+                count: Math.min(Math.max(1, numResults), 20),
+                safesearch,
+            };
+            // LibreChat date ranges follow Google qdr codes (h/d/w/m/y);
+            // Brave freshness knows pd/pw/pm/py.
+            const freshness = { h: 'pd', d: 'pd', w: 'pw', m: 'pm', y: 'py' }[date];
+            if (freshness != null && type !== 'images') {
+                params.freshness = freshness;
+            }
+            if (process.env.BRAVE_COUNTRY) {
+                params.country = process.env.BRAVE_COUNTRY;
+            }
+            if (process.env.BRAVE_SEARCH_LANG) {
+                params.search_lang = process.env.BRAVE_SEARCH_LANG;
+            }
+            // fetch, not axios: undici's global dispatcher is wired to the
+            // egress proxy by undici-proxy-bootstrap.cjs (axios' own env-proxy
+            // handling can't CONNECT-tunnel https through squid).
+            const url = new URL(endpoint);
+            for (const [key, value] of Object.entries(params)) {
+                url.searchParams.set(key, String(value));
+            }
+            const response = await fetch(url, {
+                headers: {
+                    Accept: 'application/json',
+                    'X-Subscription-Token': config.apiKey,
+                },
+                signal: AbortSignal.timeout(config.timeout),
+            });
+            if (!response.ok) {
+                const body = (await response.text().catch(() => '')).slice(0, 300);
+                throw new Error(`HTTP ${response.status}: ${body}`);
+            }
+            const data = await response.json();
+            const mapOrganic = (results) => (results ?? []).slice(0, numResults).map((result, index) => ({
+                position: index + 1,
+                title: stripHtml(result.title),
+                link: result.url ?? '',
+                snippet: stripHtml(result.description),
+                date: result.age ?? result.page_age ?? '',
+                attribution: toAttribution(result),
+            }));
+            const mapNews = (results) => (results ?? []).map((result, index) => ({
+                title: stripHtml(result.title),
+                link: result.url ?? '',
+                snippet: stripHtml(result.description),
+                date: result.age ?? result.page_age ?? '',
+                source: toAttribution(result),
+                imageUrl: result.thumbnail?.src ?? '',
+                position: index + 1,
+            }));
+            const mapVideos = (results) => (results ?? []).map((result, index) => ({
+                title: stripHtml(result.title),
+                link: result.url ?? '',
+                snippet: stripHtml(result.description),
+                date: result.age ?? result.page_age ?? '',
+                imageUrl: result.thumbnail?.src ?? '',
+                position: index + 1,
+            }));
+            const mapImages = (results) => (results ?? []).slice(0, 6).map((result, index) => ({
+                title: stripHtml(result.title),
+                imageUrl: result.properties?.url ?? result.thumbnail?.src ?? '',
+                position: index + 1,
+                source: toAttribution(result),
+                domain: toAttribution(result),
+                link: result.url ?? '',
+            }));
+            let results;
+            if (type === 'images') {
+                results = {
+                    organic: [],
+                    images: mapImages(data.results),
+                    topStories: [],
+                    relatedSearches: [],
+                    videos: [],
+                    news: [],
+                };
+            }
+            else if (type === 'videos') {
+                results = {
+                    organic: [],
+                    images: [],
+                    topStories: [],
+                    relatedSearches: [],
+                    videos: mapVideos(data.results),
+                    news: [],
+                };
+            }
+            else if (type === 'news') {
+                const news = mapNews(data.results);
+                results = {
+                    organic: [],
+                    images: [],
+                    topStories: news.slice(0, DEFAULT_SEARCH_RESULT_COUNT),
+                    relatedSearches: [],
+                    videos: [],
+                    news,
+                };
+            }
+            else {
+                // /web/search returns a mixed payload: organic under data.web,
+                // plus optional news/videos clusters.
+                const news = mapNews(data.news?.results);
+                results = {
+                    organic: mapOrganic(data.web?.results),
+                    images: [],
+                    topStories: news.slice(0, DEFAULT_SEARCH_RESULT_COUNT),
+                    relatedSearches: (data.query?.altered != null && data.query.altered !== '')
+                        ? [{ query: data.query.altered }]
+                        : [],
+                    videos: mapVideos(data.videos?.results),
+                    news,
+                };
+            }
+            results.places = [];
+            results.shopping = [];
+            results.peopleAlsoAsk = [];
+            results.knowledgeGraph = undefined;
+            results.answerBox = undefined;
+            return { success: true, data: results };
+        }
+        catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            return {
+                success: false,
+                error: `Brave Search API request failed: ${errorMessage}`,
+            };
+        }
+    };
+    return { getSources };
+};
 const createSearchAPI = (config) => {
     const { searchProvider = 'serper', serperApiKey, searxngInstanceUrl, searxngApiKey, } = config;
-    if (searchProvider.toLowerCase() === 'serper') {
+    // librechat.yaml only validates 'serper'/'searxng'; the env override lets
+    // the stack swap the actual backend (e.g. brave) without failing config
+    // validation. Scraper/reranker wiring is unaffected.
+    const provider = (process.env.LIBRECHAT_SEARCH_PROVIDER_OVERRIDE || searchProvider).toLowerCase();
+    if (provider === 'serper') {
         return createSerperAPI(serperApiKey);
     }
-    else if (searchProvider.toLowerCase() === 'searxng') {
+    else if (provider === 'searxng') {
         return createSearXNGAPI(searxngInstanceUrl, searxngApiKey);
     }
+    else if (provider === 'brave') {
+        return createBraveAPI();
+    }
     else {
-        throw new Error(`Invalid search provider: ${searchProvider}. Must be 'serper' or 'searxng'`);
+        throw new Error(`Invalid search provider: ${provider}. Must be 'serper', 'searxng', or 'brave'`);
     }
 };
 const createSourceProcessor = (config = {}, scraperInstance) => {

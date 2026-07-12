@@ -81,6 +81,19 @@ services:
       # overrides would clobber each other in last-write-wins compose merge).
       SEARXNG_INSTANCE_URL: ${SEARXNG_INSTANCE_URL_INTERNAL:-http://searxng-auth:8080}
       SEARXNG_API_KEY: ${SEARXNG_API_KEY:?set SEARXNG_API_KEY in .env}
+      # 'auto' detects the query language and picks the matching engine market;
+      # upstream's hardcoded 'all' caused cross-locale junk results.
+      SEARXNG_LANGUAGE: ${SEARXNG_LANGUAGE:-auto}
+      # Optional comma-separated engine pin (e.g. "duckduckgo,brave"). Unset =
+      # the curated set in optional/local-search/searxng/settings.yml decides.
+      SEARXNG_ENGINES: ${SEARXNG_ENGINES:-}
+      # Optional search-backend swap bypassing SearXNG (librechat.yaml keeps
+      # searchProvider: searxng — its schema doesn't know other providers).
+      # Set to "brave" together with BRAVE_API_KEY to use the Brave Search API.
+      LIBRECHAT_SEARCH_PROVIDER_OVERRIDE: ${LIBRECHAT_SEARCH_PROVIDER_OVERRIDE:-}
+      BRAVE_API_KEY: ${BRAVE_API_KEY:-}
+      BRAVE_COUNTRY: ${BRAVE_COUNTRY:-}
+      BRAVE_SEARCH_LANG: ${BRAVE_SEARCH_LANG:-}
       LIBRECHAT_WEB_SEARCH_RESULT_COUNT: ${LIBRECHAT_WEB_SEARCH_RESULT_COUNT:-6}
       LIBRECHAT_WEB_SEARCH_MAX_SOURCES: ${LIBRECHAT_WEB_SEARCH_MAX_SOURCES:-4}
       LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT:-2}
