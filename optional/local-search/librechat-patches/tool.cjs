@@ -19,6 +19,11 @@ const DEFAULT_RESULT_ITEM_LIMIT = Math.max(1, Number.parseInt(process.env.LIBREC
 const DEFAULT_HIGHLIGHT_COUNT = Math.max(1, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT ?? '3', 10) || 3);
 const MAX_SNIPPET_CHARS = Math.max(100, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT ?? '400', 10) || 400);
 const MAX_HIGHLIGHT_CHARS = Math.max(100, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT ?? '500', 10) || 500);
+// Direct-fetch (`url` param) content budget. Reading a page the user linked
+// needs the actual text — reranked highlights alone lose lists/tables (e.g. a
+// GitHub org's repo list sat past the truncation point and never reached the
+// model, which then hallucinated).
+const FETCH_CONTENT_CHARS = Math.max(2000, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT ?? '16000', 10) || 16000);
 
 function truncateText(text, maxChars) {
     if (typeof text !== 'string' || text.length <= maxChars) {
@@ -214,31 +219,82 @@ async function executeParallelSearches({ searchAPI, query, date, country, safeSe
     });
     return { success: true, data: mergedResults };
 }
+// Direct-fetch mode: wrap a user-provided link as a single organic result so
+// the existing scrape → rerank → citation pipeline handles it unchanged.
+function directUrlResult(url) {
+    let parsed;
+    try {
+        parsed = new URL(url);
+    }
+    catch {
+        throw new Error(`Invalid URL: ${url}`);
+    }
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error('Only http(s) URLs can be opened directly');
+    }
+    return {
+        success: true,
+        data: {
+            organic: [
+                {
+                    position: 1,
+                    title: parsed.hostname + (parsed.pathname !== '/' ? parsed.pathname : ''),
+                    link: parsed.href,
+                    snippet: '',
+                    date: '',
+                    attribution: parsed.hostname,
+                },
+            ],
+            topStories: [],
+            images: [],
+            videos: [],
+            news: [],
+            relatedSearches: [],
+        },
+    };
+}
 function createSearchProcessor({ searchAPI, safeSearch, sourceProcessor, onGetHighlights, logger, }) {
-    return async function ({ query, date, country, proMode = true, maxSources = DEFAULT_MAX_SOURCES, onSearchResults, images = false, videos = false, news = false, }) {
+    return async function ({ query, url, date, country, proMode = true, maxSources = DEFAULT_MAX_SOURCES, onSearchResults, images = false, videos = false, news = false, }) {
         try {
-            // Execute parallel searches and merge results
-            const searchResult = await executeParallelSearches({
-                searchAPI,
-                query,
-                date,
-                country,
-                safeSearch,
-                images,
-                videos,
-                news,
-                logger,
-            });
+            // A url skips engine search entirely and scrapes that page.
+            const searchResult = url
+                ? directUrlResult(url)
+                : await executeParallelSearches({
+                    searchAPI,
+                    query,
+                    date,
+                    country,
+                    safeSearch,
+                    images,
+                    videos,
+                    news,
+                    logger,
+                });
             onSearchResults?.(searchResult);
             const processedSources = await sourceProcessor.processSources({
-                query,
+                // In direct-fetch mode the query drives highlight extraction;
+                // fall back to the URL so an empty query still scrapes.
+                query: query && query.trim() ? query : (url ?? query),
                 news,
                 result: searchResult,
                 proMode,
                 onGetHighlights,
                 numElements: maxSources,
+                // A single directly-requested page gets a larger content
+                // budget than each of several search-result sources, and the
+                // page text makes reranked highlights redundant.
+                contentCharLimit: url ? FETCH_CONTENT_CHARS : undefined,
+                skipHighlights: Boolean(url),
             });
-            return highlights.expandHighlights(processedSources);
+            const expanded = highlights.expandHighlights(processedSources);
+            // expandHighlights drops `content` from sources that have
+            // highlights; direct-fetch mode needs it downstream (the page text
+            // is appended to the model output in createTool).
+            const scrapedContent = processedSources.organic?.[0]?.content;
+            if (url && expanded.organic?.[0] && scrapedContent) {
+                expanded.organic[0] = { ...expanded.organic[0], content: scrapedContent };
+            }
+            return expanded;
         }
         catch (error) {
             logger.error('Error in search:', error);
@@ -264,10 +320,21 @@ function createOnSearchResults({ runnableConfig, onSearchResults, }) {
 }
 function createTool({ schema, search, onSearchResults: _onSearchResults, }) {
     return tools.tool(async (params, runnableConfig) => {
-        const { query, date, country: _c, images, videos, news } = params;
+        let { query, url } = params;
+        const { date, country: _c, images, videos, news } = params;
         const country = typeof _c === 'string' && _c ? _c : undefined;
+        // Models often put URLs in `query` instead of `url`; searching engines
+        // for a URL returns noise, so promote it to a direct fetch.
+        if (!url && typeof query === 'string') {
+            const embedded = query.match(/https?:\/\/\S+/);
+            if (embedded) {
+                url = embedded[0].replace(/[).,\]>'"]+$/, '');
+                query = query.replace(embedded[0], ' ').replace(/\s+/g, ' ').trim();
+            }
+        }
         const searchResult = await search({
             query,
+            url,
             date,
             country,
             images,
@@ -279,15 +346,28 @@ function createTool({ schema, search, onSearchResults: _onSearchResults, }) {
             }),
         });
         const turn = runnableConfig.toolCall?.turn ?? 0;
+        // Direct-fetch mode: hand the model the page text itself (compaction
+        // drops `content` and truncates snippets, which is right for N search
+        // sources but starves a deliberate single-page read).
+        const fetchedContent = url ? searchResult.organic?.[0]?.content : undefined;
         const compactResult = compactSearchResult(searchResult);
         const { output, references } = format.formatResultsForLLM(turn, compactResult);
+        const finalOutput = fetchedContent
+            ? `${output}\n\n## Page Content (cite as \\ue202turn${turn}search0)\n\n${truncateText(fetchedContent, FETCH_CONTENT_CHARS)}`
+            // In-context nudge: weak models keyword-search for pages they
+            // already know the address of; remind them at decision time.
+            : `${output}\n\n[Reminder: to read a specific page, call this tool with url="<link>" (one call per page). Never keyword-search for a URL you already have.]`;
         const data = { turn, ...compactResult, references };
-        return [output, { [_enum.Constants.WEB_SEARCH]: data }];
+        return [finalOutput, { [_enum.Constants.WEB_SEARCH]: data }];
     }, {
         name: _enum.Constants.WEB_SEARCH,
         description: `Real-time search. Results have required citation anchors.
 
-Note: Use ONCE per reply unless instructed otherwise.
+Two modes:
+1. Search: set \`query\` with keywords.
+2. Open a page: set \`url\` to the exact link — the page's full content is returned. ALWAYS use this mode when the user provides a URL or you know the exact page (e.g. a GitHub org's repo listing, a repo's page); NEVER put a URL into \`query\`. Set \`query\` to what you are looking for in the page.
+
+Note: Use ONCE per reply unless instructed otherwise. Reading several known pages is the exception: make one call per page, with \`url\` set.
 
 Anchors:
 - \\ue202turnXtypeY
@@ -355,6 +435,10 @@ const createSearchTool = (config = {}) => {
         images: zod.z.boolean().optional().describe(schema.imagesSchema.description),
         videos: zod.z.boolean().optional().describe(schema.videosSchema.description),
         news: zod.z.boolean().optional().describe(schema.newsSchema.description),
+        url: zod.z
+            .string()
+            .optional()
+            .describe('Exact http(s) page to open instead of searching. REQUIRED whenever the user provides a link or you already know the page address — never search for a URL. Keep `query` set to what should be extracted from the page.'),
     };
     if (searchProvider === 'serper') {
         schemaObject.country = zod.z

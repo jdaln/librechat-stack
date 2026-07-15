@@ -21,6 +21,24 @@ interface:
   fileSearch: true
   fileCitations: true
 
+# Distinct `open_url` fetch tool for Agents (weak models ignore the url param
+# on web_search but reliably call a separately-named tool). The server is a
+# single stdio script baked into the api image; it fetches through Firecrawl,
+# so egress policy and auditing apply unchanged.
+mcpServers:
+  browser:
+    type: stdio
+    command: node
+    args:
+      - /app/mcp/open-url.cjs
+    timeout: 60000
+    # stdio children get a minimal env, not the container's; pass what the
+    # script needs explicitly.
+    env:
+      FIRECRAWL_API_URL: "${FIRECRAWL_API_URL}"
+      FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
+      LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT: "${LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT}"
+
 webSearch:
   searchProvider: searxng
   scraperProvider: firecrawl
@@ -38,7 +56,9 @@ webSearch:
     removeBase64Images: true
   jinaApiKey: "${JINA_API_KEY}"
   jinaApiUrl: "${JINA_API_URL}"
-  scraperTimeout: 7000
+  # 15s: 7s aborted slower pages mid-scrape (JS-heavy sites via the playwright
+  # engine), so the model saw failed sources and retried in loops.
+  scraperTimeout: 15000
   safeSearch: 1
 
 endpoints:
@@ -117,6 +137,13 @@ modelSpecs:
       label: "DeepSeek V4 Flash (TensorX)"
       default: false
       description: "DeepSeek V4 Flash via TensorX cloud API. 1M context, OpenAI-compatible. Requires TENSORX_API_KEY."
+      # Default-on capabilities for new conversations with this spec: web
+      # search (includes direct url fetch), code interpreter, and the local
+      # `browser` MCP server (open_url). The badges stay user-toggleable.
+      webSearch: true
+      executeCode: true
+      mcpServers:
+        - "browser"
       preset:
         endpoint: "TensorX"
         model: "deepseek/deepseek-v4-flash"

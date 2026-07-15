@@ -4,6 +4,7 @@ FROM ${LIBRECHAT_IMAGE}
 COPY optional/librechat/registerSW.noop.js /app/client/dist/registerSW.js
 COPY optional/local-search/librechat-patches/search.cjs /app/node_modules/@librechat/agents/dist/cjs/tools/search/search.cjs
 COPY optional/local-search/librechat-patches/tool.cjs /app/node_modules/@librechat/agents/dist/cjs/tools/search/tool.cjs
+COPY optional/local-search/mcp/open-url.cjs /app/mcp/open-url.cjs
 COPY optional/code-interpreter/librechat-patches/BashExecutor.cjs /app/node_modules/@librechat/agents/dist/cjs/tools/BashExecutor.cjs
 COPY optional/code-interpreter/librechat-patches/CodeExecutor.cjs /app/node_modules/@librechat/agents/dist/cjs/tools/CodeExecutor.cjs
 

@@ -99,7 +99,9 @@ services:
       LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT:-2}
       LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT:-8000}
       LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT:-300}
-      LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT:-350}
+      LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT:-600}
+      LIBRECHAT_WEB_SEARCH_CHUNK_SIZE: ${LIBRECHAT_WEB_SEARCH_CHUNK_SIZE:-500}
+      LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT: ${LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT:-16000}
     logging: *json_logging
 
   searxng:
@@ -509,7 +511,9 @@ services:
     # 2g: the v2-base-multilingual reranker is ~1.1GB on disk and needs
     # ~1.5GB resident once onnxruntime loads it. The old tiny model fit in 1g.
     mem_limit: "2g"
-    cpus: "1.0"
+    # 2 cpus: reranking is the web-search latency bottleneck (cross-encoder on
+    # CPU); 1 cpu made multi-source searches take minutes and look stuck.
+    cpus: "2.0"
     restart: always
     # No env_file: a third-party image only needs the variables listed below,
     # not the full .env secret set.

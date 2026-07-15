@@ -9,6 +9,10 @@ var utils = require('./utils.cjs');
 const DEFAULT_SEARCH_RESULT_COUNT = Math.max(1, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_RESULT_COUNT ?? '4', 10) || 4);
 const DEFAULT_HIGHLIGHT_COUNT = Math.max(1, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_HIGHLIGHT_COUNT ?? '3', 10) || 3);
 const MAX_SOURCE_CONTENT_CHARS = Math.max(1000, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_SOURCE_CHAR_LIMIT ?? '12000', 10) || 12000);
+// Upstream's 150-char chunks turn one page into ~80 rerank documents, which
+// takes >10s per source on the CPU cross-encoder. Bigger chunks cut rerank
+// volume ~4x and carry more context per highlight.
+const HIGHLIGHT_CHUNK_SIZE = Math.max(100, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_CHUNK_SIZE ?? '500', 10) || 500);
 
 function truncateText(text, maxChars) {
     if (typeof text !== 'string' || text.length <= maxChars) {
@@ -35,8 +39,17 @@ const chunker = {
     cleanText: (text) => {
         if (!text)
             return '';
+        // Densify scraped markdown before chunking/truncation: images become
+        // their alt text (often the actual information, e.g. ratings), empty
+        // decorative links and GitHub's static no-JS templates are dropped.
+        const denoised = text
+            .replace(/!\[([^\]]*)\]\([^()]*(?:\([^()]*\)[^()]*)*\)/g, '$1')
+            .replace(/\[\s*\]\([^()]*(?:\([^()]*\)[^()]*)*\)/g, '')
+            .replace(/You (?:signed (?:in|out) with|switched accounts on) another tab or window\.?\s*\[Reload\]\([^)]*\)\s*to refresh your session\.?/g, '')
+            .replace(/#{0,4}\s*Uh oh!\s*(\[?There was an error while loading\.?\]?(\([^)]*\))?\s*)?(\[?Please reload this page\]?(\([^)]*\))?\s*)?\.?/g, '')
+            .replace(/\[Skip to content\]\([^)]*\)/g, '');
         /** Normalized all line endings to '\n' */
-        const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        const normalizedText = denoised.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
         /** Handle multiple backslashes followed by newlines
          * This replaces patterns like '\\\\\\n' with a single newline */
         const fixedBackslashes = normalizedText.replace(/\\+\n/g, '\n');
@@ -89,7 +102,10 @@ const getHighlights = async ({ query, content, reranker, topResults = DEFAULT_HI
         return;
     }
     try {
-        const documents = await chunker.splitText(content);
+        const documents = await chunker.splitText(content, {
+            chunkSize: HIGHLIGHT_CHUNK_SIZE,
+            chunkOverlap: 50,
+        });
         if (Array.isArray(documents)) {
             return await reranker.rerank(query, documents, topResults);
         }
@@ -551,7 +567,7 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
     const logger_ = logger || utils.createDefaultLogger();
     const scraper = scraperInstance;
     const webScraper = {
-        scrapeMany: async ({ query, links, onGetHighlights, }) => {
+        scrapeMany: async ({ query, links, onGetHighlights, contentCharLimit, skipHighlights, }) => {
             logger_.debug(`Scraping ${links.length} links`);
             const promises = [];
             try {
@@ -567,7 +583,7 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                                 url,
                                 references,
                                 attribution,
-                                content: truncateText(chunker.cleanText(content), MAX_SOURCE_CONTENT_CHARS),
+                                content: truncateText(chunker.cleanText(content), contentCharLimit ?? MAX_SOURCE_CONTENT_CHARS),
                             };
                         }
                         else {
@@ -587,6 +603,15 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                                 return {
                                     ...result,
                                 };
+                            }
+                            // Direct-fetch mode returns the page content itself, so
+                            // reranked highlights add nothing but latency (and, on
+                            // boilerplate-heavy pages, misleading low-relevance noise).
+                            if (skipHighlights) {
+                                if (onGetHighlights) {
+                                    onGetHighlights(result.url);
+                                }
+                                return result;
                             }
                             const highlights = await getHighlights({
                                 query,
@@ -629,13 +654,15 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
             }
         },
     };
-    const fetchContents = async ({ links, query, target, onGetHighlights, onContentScraped, }) => {
+    const fetchContents = async ({ links, query, target, onGetHighlights, onContentScraped, contentCharLimit, skipHighlights, }) => {
         const initialLinks = links.slice(0, target);
         // const remainingLinks = links.slice(target).reverse();
         const results = await webScraper.scrapeMany({
             query,
             links: initialLinks,
             onGetHighlights,
+            contentCharLimit,
+            skipHighlights,
         });
         for (const result of results) {
             if (result.error === true) {
@@ -650,7 +677,7 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
             });
         }
     };
-    const processSources = async ({ result, numElements, query, news, proMode = true, onGetHighlights, }) => {
+    const processSources = async ({ result, numElements, query, news, proMode = true, onGetHighlights, contentCharLimit, skipHighlights, }) => {
         try {
             if (!result.data) {
                 return {
@@ -710,6 +737,8 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                     onContentScraped,
                     links: organicLinks,
                     target: numElements,
+                    contentCharLimit,
+                    skipHighlights,
                 }));
             }
             // Process top story links
@@ -720,6 +749,7 @@ const createSourceProcessor = (config = {}, scraperInstance) => {
                     onContentScraped,
                     links: topStoryLinks,
                     target: numElements,
+                    contentCharLimit,
                 }));
             }
             await Promise.all(promises);
