@@ -11,7 +11,7 @@
 # ------------------------------------------------------------------------------
 
 # The title displayed in the web interface.
-APP_TITLE=LibreChatViaGoogle
+APP_TITLE=LibreChat
 
 # Comma-separated LibreChat endpoints to expose in the UI/runtime.
 # Include `agents` if you want saved Agents and their tool capabilities.

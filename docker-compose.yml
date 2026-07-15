@@ -233,7 +233,9 @@ services:
       POSTGRES_PASSWORD: ""
     # No host binds — use named volumes only
     volumes:
-      - lbc_api_images:/app/client/public/images:ro
+      # Writable: the local file strategy stores processed uploads (pasted
+      # screenshots, avatars) under images/<userId>/ at runtime.
+      - lbc_api_images:/app/client/public/images
       - lbc_api_uploads:/app/uploads
       - lbc_app_data:/app/data
       - type: volume
