@@ -15,6 +15,10 @@ use_default_settings:
       - startpage
       - qwant
       - wikipedia
+      # Mojeek runs its own crawler and tolerates automated queries — it keeps
+      # results flowing when the big engines CAPTCHA/429 this egress IP under
+      # load (observed 2026-09-02: DDG+Brave+Qwant+Startpage all suspended).
+      - mojeek
       # images
       - duckduckgo images
       - brave.images
@@ -44,6 +48,10 @@ engines:
   - name: qwant videos
     disabled: false
   - name: qwant news
+    disabled: false
+  # Disabled in upstream defaults (result quality below the big engines), but
+  # it is the only general engine here that doesn't rate-limit automation.
+  - name: mojeek
     disabled: false
 
 general:

@@ -136,6 +136,17 @@ failure surfaces only as a confusing downstream error — or never.
 
 **Fix:** `if cmd; then return 0; else rc="$?"; fi` in both helpers.
 
+### 2.1b [HIGH] `smoke_local_search.sh` is fully broken: it execs `curl` inside the LibreChat container, which the GA image no longer ships (verified 2026-09-02)
+**Where:** [scripts/smoke_local_search.sh](scripts/smoke_local_search.sh) (all `docker exec … LibreChat sh -ec 'curl …'` blocks)
+
+The v0.8.6 GA upstream image dropped `curl` (only BusyBox `wget` remains — same root cause as the
+compose healthcheck note). Every check in the script fails with `curl: not found` and the script
+aborts at "Firecrawl API did not become ready". The web-search stack itself works; the smoke test
+can no longer tell.
+
+**Fix:** switch the in-container probes to `python3 -c` with `urllib` (as the compose healthcheck
+already does) or run curl from a helper container on the same networks.
+
 ### 2.2 [HIGH] Backups snapshot live MongoDB/Postgres data files — restore may be corrupt
 **Where:** [backup/backup_librechat.sh:44-58](backup/backup_librechat.sh#L44)
 

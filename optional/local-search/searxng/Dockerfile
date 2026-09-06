@@ -3,3 +3,11 @@ FROM ${SEARXNG_IMAGE}
 
 COPY optional/local-search/searxng/settings.yml /etc/searxng/settings.yml
 COPY optional/local-search/searxng/limiter.toml /etc/searxng/limiter.toml
+
+# DDG serves CAPTCHA to searxng's header order since ~2026-08-30 (searxng#6596);
+# upstream fix unmerged as of 2026-09-02. The script exits non-zero (failing the
+# build) if the upstream code drifted from its anchor.
+COPY optional/local-search/searxng/patch_ddg_header_order.py /tmp/patch_ddg_header_order.py
+RUN python3 /tmp/patch_ddg_header_order.py \
+ && python3 -m compileall -q /usr/local/searxng/searx/engines/duckduckgo.py /usr/local/searxng/searx/network/client.py \
+ && rm /tmp/patch_ddg_header_order.py

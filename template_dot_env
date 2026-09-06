@@ -236,10 +236,14 @@ SEARXNG_VALKEY_IMAGE=valkey/valkey:9.0.4-alpine@sha256:d1cc70645bbcef743615463a2
 # curated set in optional/local-search/searxng/settings.yml). Leave unset.
 #SEARXNG_ENGINES=
 
-# --- Optional: Brave Search API instead of SearXNG -------------------------
-# Swaps the search backend at the patched-module level; librechat.yaml keeps
+# --- Optional: Brave Search API ---------------------------------------------
+# Two modes, both at the patched-module level; librechat.yaml keeps
 # searchProvider: searxng (its schema doesn't validate other values), and the
 # scraper (Firecrawl) + reranker (Jina) pipeline is unchanged.
+#  - BRAVE_API_KEY alone: SearXNG stays primary; an empty or failed SearXNG
+#    response is retried once via Brave (fallback for upstream engine
+#    suspensions under burst: DDG CAPTCHA, Brave 429, Qwant denials).
+#  - Plus LIBRECHAT_SEARCH_PROVIDER_OVERRIDE=brave: Brave is the sole backend.
 # Requires a key from https://api-dashboard.search.brave.com — free tier: 1 req/s.
 # api.search.brave.com is already in optional/egress-proxy/allowed_domains.txt.
 #LIBRECHAT_SEARCH_PROVIDER_OVERRIDE=brave
@@ -297,6 +301,15 @@ LIBRECHAT_WEB_SEARCH_SNIPPET_CHAR_LIMIT=300
 LIBRECHAT_WEB_SEARCH_HIGHLIGHT_CHAR_LIMIT=600
 LIBRECHAT_WEB_SEARCH_CHUNK_SIZE=500
 LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT=16000
+# Minimum spacing (ms) between search request starts, per provider. Upstream
+# engines suspend under bursts from one egress IP (DDG CAPTCHA, Brave 429,
+# Qwant access denied), which surfaced as silent zero-result searches when
+# the model fired parallel web_search calls. Each SearXNG gap gets a random
+# extra 0..JITTER_MS so the cadence doesn't look mechanical to bot detection.
+# Brave (keyed API, hard 1 req/s free tier) uses fixed spacing, no jitter.
+LIBRECHAT_SEARXNG_MIN_INTERVAL_MS=1000
+LIBRECHAT_SEARXNG_JITTER_MS=1000
+LIBRECHAT_BRAVE_MIN_INTERVAL_MS=1100
 
 # The domain for the client and server. These are used for CORS and other
 # internal settings. For a local setup, the default is usually correct.

@@ -35,6 +35,37 @@ function redactUrl(url) {
     }
 }
 
+// Upstream engines rate-limit bursts from a single egress IP: parallel
+// web_search tool calls were suspending 4 of 5 general engines at once
+// (DDG CAPTCHA, Qwant access denied, Brave 429), surfacing as silent
+// zero-result searches. Space request *starts* per provider; requests
+// themselves still overlap, so a slow response doesn't block the next.
+function createRateLimitedQueue(minIntervalMs, jitterMs = 0) {
+    let nextSlot = 0;
+    return function wrap(fn) {
+        return async function (...args) {
+            const now = Date.now();
+            const startAt = Math.max(now, nextSlot);
+            // Randomized gap: a fixed cadence looks mechanical to engine bot
+            // detection; each gap is minIntervalMs plus up to jitterMs extra.
+            const gap = minIntervalMs + (jitterMs > 0 ? Math.floor(Math.random() * (jitterMs + 1)) : 0);
+            nextSlot = startAt + gap;
+            if (startAt > now) {
+                await new Promise((resolve) => setTimeout(resolve, startAt - now));
+            }
+            return fn(...args);
+        };
+    };
+}
+// Module-level so the spacing holds across tool instances (one per request).
+const SEARXNG_MIN_INTERVAL_MS = Math.max(0, Number.parseInt(process.env.LIBRECHAT_SEARXNG_MIN_INTERVAL_MS ?? '1000', 10) || 0);
+const SEARXNG_JITTER_MS = Math.max(0, Number.parseInt(process.env.LIBRECHAT_SEARXNG_JITTER_MS ?? '1000', 10) || 0);
+// Brave is a keyed API with a hard 1 req/s free tier: fixed spacing with a
+// safety margin, no jitter needed.
+const BRAVE_MIN_INTERVAL_MS = Math.max(0, Number.parseInt(process.env.LIBRECHAT_BRAVE_MIN_INTERVAL_MS ?? '1100', 10) || 0);
+const searxngQueue = createRateLimitedQueue(SEARXNG_MIN_INTERVAL_MS, SEARXNG_JITTER_MS);
+const braveQueue = createRateLimitedQueue(BRAVE_MIN_INTERVAL_MS);
+
 const chunker = {
     cleanText: (text) => {
         if (!text)
@@ -356,7 +387,7 @@ const createSearXNGAPI = (instanceUrl, apiKey) => {
             };
         }
     };
-    return { getSources };
+    return { getSources: searxngQueue(getSources) };
 };
 // Brave Search API provider (https://api.search.brave.com). Not an upstream
 // LibreChat provider: librechat.yaml's webSearch schema only accepts
@@ -535,7 +566,7 @@ const createBraveAPI = (apiKey) => {
             };
         }
     };
-    return { getSources };
+    return { getSources: braveQueue(getSources) };
 };
 const createSearchAPI = (config) => {
     const { searchProvider = 'serper', serperApiKey, searxngInstanceUrl, searxngApiKey, } = config;
@@ -547,7 +578,56 @@ const createSearchAPI = (config) => {
         return createSerperAPI(serperApiKey);
     }
     else if (provider === 'searxng') {
-        return createSearXNGAPI(searxngInstanceUrl, searxngApiKey);
+        const searxng = createSearXNGAPI(searxngInstanceUrl, searxngApiKey);
+        // With BRAVE_API_KEY configured, an empty or failed SearXNG response
+        // retries once via the Brave Search API: engine suspensions upstream
+        // (CAPTCHA/429 under burst) otherwise surface as silent zero-result
+        // searches. Query text must never be logged (logging privacy policy).
+        if (!process.env.BRAVE_API_KEY) {
+            return searxng;
+        }
+        const logger = utils.createDefaultLogger();
+        let brave = null;
+        const isEmptyResult = (data, type) => {
+            if (data == null) {
+                return true;
+            }
+            if (type === 'images') {
+                return (data.images?.length ?? 0) === 0;
+            }
+            if (type === 'videos') {
+                return (data.videos?.length ?? 0) === 0;
+            }
+            if (type === 'news') {
+                return (data.news?.length ?? 0) === 0 && (data.topStories?.length ?? 0) === 0;
+            }
+            return (data.organic?.length ?? 0) === 0 && (data.topStories?.length ?? 0) === 0;
+        };
+        const getSources = async (params) => {
+            const primary = await searxng.getSources(params);
+            if (primary.success === true && !isEmptyResult(primary.data, params.type)) {
+                return primary;
+            }
+            try {
+                if (brave == null) {
+                    brave = createBraveAPI();
+                }
+                logger.warn(`SearXNG ${primary.success === true ? 'returned no results' : 'failed'}; retrying via Brave Search API`);
+                const secondary = await brave.getSources(params);
+                if (secondary.success === true) {
+                    return secondary;
+                }
+                // Error bodies can echo the query — log the HTTP status only.
+                const status = /HTTP \d+/.exec(secondary.error ?? '')?.[0] ?? 'no HTTP status';
+                logger.error(`Brave fallback failed too (${status})`);
+                return primary;
+            }
+            catch (error) {
+                logger.error(`Brave fallback error: ${error instanceof Error ? error.message : String(error)}`);
+                return primary;
+            }
+        };
+        return { getSources };
     }
     else if (provider === 'brave') {
         return createBraveAPI();

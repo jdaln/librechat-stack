@@ -120,12 +120,12 @@ endpoints:
       modelDisplayLabel: "TensorX"
       titleConvo: true
       titleMethod: "completion"
-      titleModel: "deepseek/deepseek-v4-flash"
+      titleModel: "deepseek/deepseek-v4-flash-0731"
       models:
         # `fetch: true` queries /v1/models once a real key is set; the default
         # keeps DeepSeek V4 Flash selectable on first boot.
         default:
-          - "deepseek/deepseek-v4-flash"
+          - "deepseek/deepseek-v4-flash-0731"
         fetch: true
 
 modelSpecs:
@@ -133,7 +133,7 @@ modelSpecs:
   prioritize: false
   list:
     # Cloud endpoint via TensorX (requires TENSORX_API_KEY in .env).
-    - name: "tensorx-deepseek-v4-flash"
+    - name: "tensorx-deepseek-v4-flash-0731"
       label: "DeepSeek V4 Flash (TensorX)"
       default: false
       description: "DeepSeek V4 Flash via TensorX cloud API. 1M context, OpenAI-compatible. Requires TENSORX_API_KEY."
@@ -146,7 +146,7 @@ modelSpecs:
         - "browser"
       preset:
         endpoint: "TensorX"
-        model: "deepseek/deepseek-v4-flash"
+        model: "deepseek/deepseek-v4-flash-0731"
         temperature: 1.0
         greeting: "DeepSeek V4 Flash preset is active via TensorX.\n"
     # All five presets are Apple-MLX builds of Gemma 4, pulled into the

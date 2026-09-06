@@ -25,6 +25,39 @@ const MAX_HIGHLIGHT_CHARS = Math.max(100, Number.parseInt(process.env.LIBRECHAT_
 // model, which then hallucinated).
 const FETCH_CONTENT_CHARS = Math.max(2000, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT ?? '16000', 10) || 16000);
 
+// Small models re-search near-identical queries within one run, re-scraping
+// the same top-ranked pages (the dominant latency: up to 4 Firecrawl scrapes
+// per call). Cache raw scrape responses per tool instance (= per agent run)
+// so a repeated URL skips the Firecrawl round-trip while all downstream,
+// per-query work (cleanText, truncation budgets, reranked highlights) still
+// runs against the current query. Only successful scrapes stay cached; the
+// promise is stored immediately so concurrent same-URL scrapes dedupe too.
+const SCRAPE_CACHE_MAX_ENTRIES = 40;
+function withScrapeCache(scraper) {
+    const cache = new Map();
+    const wrapped = Object.create(scraper);
+    wrapped.scrapeUrl = function (url, options) {
+        if (cache.has(url)) {
+            return cache.get(url);
+        }
+        const promise = scraper.scrapeUrl(url, options).then((result) => {
+            const response = result?.[1];
+            if (!(response && response.success && response.data)) {
+                cache.delete(url);
+            }
+            return result;
+        }, (error) => {
+            cache.delete(url);
+            throw error;
+        });
+        if (cache.size < SCRAPE_CACHE_MAX_ENTRIES) {
+            cache.set(url, promise);
+        }
+        return promise;
+    };
+    return wrapped;
+}
+
 function truncateText(text, maxChars) {
     if (typeof text !== 'string' || text.length <= maxChars) {
         return text;
@@ -319,6 +352,9 @@ function createOnSearchResults({ runnableConfig, onSearchResults, }) {
     };
 }
 function createTool({ schema, search, onSearchResults: _onSearchResults, }) {
+    /** Links already shown to the model during this run — the tool instance
+     *  (and this set) lives for one agent run and dies with it. */
+    const seenLinks = new Set();
     return tools.tool(async (params, runnableConfig) => {
         let { query, url } = params;
         const { date, country: _c, images, videos, news } = params;
@@ -352,12 +388,86 @@ function createTool({ schema, search, onSearchResults: _onSearchResults, }) {
         const fetchedContent = url ? searchResult.organic?.[0]?.content : undefined;
         const compactResult = compactSearchResult(searchResult);
         const { output, references } = format.formatResultsForLLM(turn, compactResult);
+        // Zero-source searches otherwise hand the model a blank result: tell it
+        // explicitly whether the search failed or genuinely found nothing, so
+        // it can report that accurately instead of guessing.
+        // WebSearch.tsx hides the whole entry when the tool output contains
+        // the phrase "error processing" — make sure error text can't match.
+        const emptyNote = searchResult.error != null
+            ? `[Search failed: ${truncateText(String(searchResult.error), 300).replace(/error processing/gi, 'error-processing')}]\n\n`
+            : '[The search returned no results.]\n\n';
+        const hasAnySource = (compactResult.organic?.length ?? 0) + (compactResult.topStories?.length ?? 0) > 0;
+        const statusPrefix = hasAnySource ? '' : emptyNote;
+        // Small models loop on near-identical searches. When a new search mostly
+        // re-returns pages already shown this run, say so explicitly — results
+        // are kept as-is (highlights are query-specific, citation anchors stay
+        // valid); only the nudge is added. Direct-fetch (`url`) is deliberate
+        // re-reading and never gets the note.
+        let dupNote = '';
+        const currentLinks = [
+            ...(compactResult.organic ?? []),
+            ...(compactResult.topStories ?? []),
+        ].map((s) => s?.link).filter(Boolean);
+        if (!url) {
+            const dupCount = currentLinks.filter((l) => seenLinks.has(l)).length;
+            if (dupCount >= 2 && dupCount / currentLinks.length >= 0.5) {
+                dupNote = `[Note: ${dupCount} of ${currentLinks.length} results were already returned by an earlier search in this reply. Repeating similar queries finds nothing new — refine the query, or open a specific page with url="<link>".]\n\n`;
+            }
+        }
+        for (const link of currentLinks) {
+            seenLinks.add(link);
+        }
         const finalOutput = fetchedContent
-            ? `${output}\n\n## Page Content (cite as \\ue202turn${turn}search0)\n\n${truncateText(fetchedContent, FETCH_CONTENT_CHARS)}`
+            ? `${statusPrefix}${output}\n\n## Page Content (cite as \\ue202turn${turn}search0)\n\n${truncateText(fetchedContent, FETCH_CONTENT_CHARS)}`
             // In-context nudge: weak models keyword-search for pages they
             // already know the address of; remind them at decision time.
-            : `${output}\n\n[Reminder: to read a specific page, call this tool with url="<link>" (one call per page). Never keyword-search for a URL you already have.]`;
-        const data = { turn, ...compactResult, references };
+            : `${statusPrefix}${dupNote}${output}\n\n[Reminder: to read a specific page, call this tool with url="<link>" (one call per page). Never keyword-search for a URL you already have.]`;
+        // A search that ends with zero sources renders as a dead, non-expandable
+        // "Searched the web" label in the client (WebSearch.tsx disables the
+        // toggle when the artifact has no organic/topStories links). Inject a
+        // synthetic placeholder source into the UI artifact only — never into
+        // the model output or citation references — so the label stays
+        // expandable and shows what was searched and why nothing came back.
+        let artifactResult = compactResult;
+        if (!hasAnySource) {
+            const failed = compactResult.error != null;
+            const failureSnippet = failed
+                ? truncateText(String(compactResult.error), MAX_SNIPPET_CHARS)
+                : '';
+            let placeholder;
+            if (url) {
+                let label = url;
+                try {
+                    const parsed = new URL(url);
+                    label = parsed.hostname + (parsed.pathname !== '/' ? parsed.pathname : '');
+                }
+                catch {
+                    // keep the raw url as label
+                }
+                placeholder = {
+                    position: 1,
+                    title: `Fetch failed — ${label}`,
+                    link: url,
+                    snippet: failureSnippet,
+                    date: '',
+                    attribution: label,
+                };
+            }
+            else {
+                const q = typeof query === 'string' ? query : '';
+                placeholder = {
+                    position: 1,
+                    title: `${failed ? 'Search failed' : 'No results'} — "${q}"`,
+                    // Clicking the row reruns the query in the user's own browser.
+                    link: `https://duckduckgo.com/?q=${encodeURIComponent(q)}`,
+                    snippet: failureSnippet,
+                    date: '',
+                    attribution: 'duckduckgo.com',
+                };
+            }
+            artifactResult = { ...compactResult, organic: [placeholder] };
+        }
+        const data = { turn, ...artifactResult, references };
         return [finalOutput, { [_enum.Constants.WEB_SEARCH]: data }];
     }, {
         name: _enum.Constants.WEB_SEARCH,
@@ -477,6 +587,7 @@ const createSearchTool = (config = {}) => {
             logger,
         });
     }
+    scraperInstance = withScrapeCache(scraperInstance);
     const selectedReranker = rerankers.createReranker({
         rerankerType,
         jinaApiKey,
