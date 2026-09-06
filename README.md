@@ -1,8 +1,8 @@
 # LibreChat Stack
 
-A hardened, self-hosted [LibreChat](https://www.librechat.ai/) deployment for Apple Silicon — with optional code execution, local web search, and egress-controlled networking.
+A hardened, self-hosted [LibreChat](https://www.librechat.ai/) deployment for Apple Silicon, with optional code execution, local web search, and egress-controlled networking.
 
-All outbound traffic from the app goes through a Squid allowlist proxy, databases stay on an internal-only network, and everything runs under read-only rootfs with dropped caps. The defaults target a single M-series Mac running [Colima][1].
+All outbound traffic from the app goes through a Squid allowlist proxy, databases stay on internal-only networks, and every service runs with a read-only rootfs and dropped capabilities. The defaults target a single M-series Mac running [Colima][1].
 
 Licensed under [Apache 2.0](LICENSE).
 
@@ -38,24 +38,20 @@ docker compose --env-file .env \
 
 Open the app at `http://localhost:3081` (through `api-proxy`).
 
-> Every `docker compose` invocation below assumes the same base flags
+> Every `docker compose` command below assumes the same base flags
 > (`--env-file .env -f docker-compose.yml -f compose.hardening.yml`)
-> plus any optional `-f` overlays. The helper script handles this for you.
-> Treat `compose.hardening.yml` as required, not optional — the overlay
-> stacks assume the core services run hardened.
-> If you only have the legacy `docker-compose` binary (not the V2 plugin),
-> substitute `docker-compose` for `docker compose` in every command below.
+> plus any optional `-f` overlays; the helper script adds them for you.
+> `compose.hardening.yml` is required — the overlays assume the core
+> services run hardened. If you only have the legacy `docker-compose`
+> binary (not the V2 plugin), substitute `docker-compose` for
+> `docker compose` in every command.
 
-After the stack is up, create the first admin user:
+After the stack is up, create the first admin user (`-w /app` is required):
 
 ```bash
 docker compose -f docker-compose.yml -f compose.hardening.yml \
   exec -w /app api npm run create-user
 ```
-
-(`-w /app` is needed because the script is registered in the root
-`package.json`; the `api` workspace has a stale entry pointing at the wrong
-path.)
 
 ### Optional: user-namespace remapping
 
@@ -73,12 +69,9 @@ exit
 
 ## How Egress Hardening Works
 
-The `api` and `rag_api` containers have no direct internet access. All their outbound HTTP(S) goes through an internal Squid proxy that only allows domains listed in `optional/egress-proxy/allowed_domains.txt`.
-The `sandpack` container is isolated on a separate internal frontend network; browser access on `http://127.0.0.1:80` is proxied through `api-proxy`.
-`api-proxy` stays on the two internal frontend networks plus `ingress` because Docker host port publishing on this stack breaks when the proxy is attached only to an `internal: true` network. The `ingress` bridge has IP masquerading disabled, so it supports localhost-published ports without giving the proxy useful outbound internet access.
-`rag_api` is pinned to an official digest (`registry.librechat.ai/...@sha256:...`) to avoid silent image drift.
+The `api` and `rag_api` containers have no direct internet access. All their outbound HTTP(S) goes through an internal Squid proxy that only allows domains listed in `optional/egress-proxy/allowed_domains.txt`. If an LLM prompt injection tries to exfiltrate data to an unknown host, Squid blocks it. Databases sit on networks with no route to the proxy at all. Per-container rules and verification commands: [docs/egress-policy.md](docs/egress-policy.md).
 
-If an LLM prompt injection tries to exfiltrate data to an unknown host, Squid blocks it. Quick verification:
+Quick check:
 
 ```bash
 # Should print "200 Connection established" for opencode.ai,
@@ -95,16 +88,15 @@ const test=(h)=>new Promise(r=>{\
 (async()=>{await test('opencode.ai');await test('example.com');})();"
 ```
 
-Edit the allowlist and restart the proxy to change which domains are permitted.
+To change which domains are permitted, edit the allowlist and restart the proxy.
 
-When the local-search overlay is enabled, SearXNG/Firecrawl egress is routed through Squid with full access logging. By design this path is auditable but not domain-allowlisted, so the stack can scrape arbitrary public result domains. Squid still denies local, private, link-local, reserved, and internal-name destinations to avoid turning search scraping into a private-network SSRF path.
+With the local-search overlay enabled, SearXNG/Firecrawl egress also goes through Squid, but is logged rather than domain-allowlisted so search can scrape arbitrary public sites. Squid still denies local, private, link-local, reserved, and internal-name destinations.
 
 ---
 
 ## Model Presets
 
-Presets ship in `librechat.yaml`. The model names upstream change over time —
-verify against `https://opencode.ai/zen/v1/models` and OpenRouter if a preset 404s.
+Presets ship in `librechat.yaml`. Upstream model names change over time — if a preset 404s, check `https://opencode.ai/zen/v1/models` and OpenRouter.
 
 | Preset (default ★) | Provider | Model | Key |
 |--------|----------|-------|-----|
@@ -113,26 +105,17 @@ verify against `https://opencode.ai/zen/v1/models` and OpenRouter if a preset 40
 | Gemma 4 31B Free | OpenRouter | `google/gemma-4-31b-it:free` | `OPENROUTER_API_KEY` (free tier) |
 | Claude Fable 5 | OpenCode Zen | `claude-fable-5` | real OpenCode key (paid) |
 
-**OpenCode Zen** is the default. The shared `OPENAI_API_KEY=public` key can
-list models and run the free `*-free` models out of the box — **but premium
-models (`claude-*`, `gpt-5*`, `gemini-*`, …) return 401 with `public`**; set
-your own OpenCode key for those and for higher rate limits.
+**OpenCode Zen** is the default. The shared `OPENAI_API_KEY=public` key can list models and run the free `*-free` models out of the box — **but premium models (`claude-*`, `gpt-5*`, `gemini-*`, …) return 401 with `public`**; set your own OpenCode key for those and for higher rate limits.
 
-**OpenRouter** needs a separate key (even a free one):
+**OpenRouter** needs its own key (even a free one):
 ```bash
 OPENROUTER_API_KEY=<your-key>
 ```
-With `fetch: true`, a real key auto-populates the full OpenRouter model list in
-the UI. Free `*:free` models work but are rate-limited upstream (429s) and are
-weaker at agentic tool-calling (e.g. web search).
-
-> Upstream availability drifts: OpenCode Zen dropped `minimax-m2.5-free` /
-> `big-pickle`-era free models and OpenRouter retired `trinity-large-preview`.
-> The presets above were verified live; refresh them if a model disappears.
+With `fetch: true`, a real key auto-populates the full OpenRouter model list in the UI. Free `*:free` models work but are rate-limited upstream (429s) and are weaker at agentic tool-calling.
 
 Both providers are always selectable in the UI.
 
-> Make sure `agents` is in `ENDPOINTS` (it is by default) if you want saved Agents and tool-enabled chats.
+> Keep `agents` in `ENDPOINTS` (it is by default) if you want saved Agents and tool-enabled chats.
 
 ---
 
@@ -152,7 +135,7 @@ STACK_PROFILE=full                   ./scripts/start_stack.sh   # everything inc
 STACK_PROFILE=full-remote-inference  ./scripts/start_stack.sh   # `full` minus the Ollama bridge
 ```
 
-**All standard profiles assume Ollama is running on the host** — they enable the `ollama-proxy` bridge by default. If you only use remote inference (OpenCode Zen / OpenRouter / OpenAI / Anthropic / …) and have no host-side Ollama, use **`full-remote-inference`** — it's the only profile with `ollama` explicitly off.
+**All standard profiles assume Ollama is running on the host** — they enable the `ollama-proxy` bridge by default. If you only use remote inference (OpenCode Zen / OpenRouter / OpenAI / Anthropic / …) and have no host-side Ollama, use **`full-remote-inference`** — the only profile with `ollama` off.
 
 Without `STACK_PROFILE`, the script checks `ENABLE_CODE_INTERPRETER`, `ENABLE_LOCAL_SEARCH`, `ENABLE_EMBEDDINGS`, `ENABLE_OLLAMA`, and `ENABLE_STATIC_PREVIEW` individually.
 
@@ -175,22 +158,13 @@ curl -fsS http://127.0.0.1:8001/health
 
 In the UI, create an Agent and enable the **Code Interpreter** tool. LibreChat reaches the backend internally at `http://code-interpreter-api:8000`.
 
-The helper script (`scripts/prepare_code_interpreter_image.sh`) clones the upstream repo, strips BuildKit-only syntax when `buildx` is absent, and caches everything under `~/Library/Caches/librechat-stack/`.
+`scripts/prepare_code_interpreter_image.sh` clones the upstream repo and caches the build under `~/Library/Caches/librechat-stack/`.
 
-<details>
-<summary>Implementation notes</summary>
+Before enabling:
 
-- Pinned to commit `170194f` on the `dev` branch.
-- The upstream pre-warmed REPL pool doesn't start reliably under Colima's hardened tmpfs layout, so `REPL_ENABLED` and `SANDBOX_POOL_ENABLED` are off. Python falls back to one-shot nsjail execution (slower, stable).
-- The container needs `SYS_ADMIN` for nsjail.
-- The interpreter backend, Redis, and MinIO live on a dedicated internal `code_interpreter` network. LibreChat reaches the backend across a separate internal `code_gateway` network through `code-interpreter-proxy`, which preserves the `code-interpreter-api` DNS alias for existing `.env` files.
-- Interpreter traffic has no WAN egress and no shared network path to MongoDB, RAG, Meilisearch, or Squid.
-- `api` sets `HTTP_PROXY`/`HTTPS_PROXY` but not `PROXY`, so `execute_code` calls reach the interpreter directly without Squid.
-- MinIO is pinned to `RELEASE.2025-09-07` (later images went source-only).
-- MinIO credentials in `template_dot_env` are intentionally non-default placeholders. Set strong values before enabling this overlay.
+- Set strong MinIO credentials in `.env` — the template values are placeholders.
+- The container needs `SYS_ADMIN` for nsjail (see Known limitations).
 - `librechat.yaml` must list `execute_code` in `endpoints.agents.capabilities` (it does by default).
-
-</details>
 
 ---
 
@@ -205,31 +179,21 @@ ENABLE_LOCAL_SEARCH=1 ./scripts/start_stack.sh
 ./scripts/smoke_local_search.sh
 ```
 
-Web search is already wired in `librechat.yaml` — just flip the search toggle on any conversation or Agent.
+Web search is already wired in `librechat.yaml` — flip the search toggle on any conversation or Agent.
 
 The Jina reranker image is built locally by `scripts/prepare_jina_reranker_image.sh` with the tiny `jina-reranker-v1-tiny-en` model baked in, so the container stays offline after the first build.
 
 Search context is bounded by default (3 results, 2 scraped sources, 2 highlights) to keep model context reasonable. Tune with `LIBRECHAT_WEB_SEARCH_*` env vars.
 
-<details>
-<summary>Implementation notes</summary>
+Before enabling:
 
-- SearXNG config (`optional/local-search/searxng/settings.yml`): JSON output enabled (LibreChat requires it), noisy engines removed, timeout lowered to 4 s.
-- DDG header-order patch (`optional/local-search/searxng/patch_ddg_header_order.py`, applied at image build): DuckDuckGo fingerprints HTTP header order since ~2026-08-30 ([searxng#6596](https://github.com/searxng/searxng/issues/6596)) and answers stock SearXNG with an HTTP 202 challenge regardless of IP (verified: identical request passes with `User-Agent` after `Accept-Language`, fails with it early; TLS cipher shuffle is not a factor). Two edits, both needed because httpx keeps an existing header key's wire position on merge: drop the client-level default `User-Agent` in `searx/network/client.py`, and re-insert `User-Agent` after `Accept-Language` in the DDG engine. Drop when upstream ships [#6620](https://github.com/searxng/searxng/pull/6620)/[#5476](https://github.com/searxng/searxng/pull/5476) and the `SEARXNG_IMAGE` pin moves past the fix.
-- SearXNG requests from LibreChat now flow through `searxng-auth-proxy`, which enforces `X-API-Key` using `SEARXNG_API_KEY`. The raw SearXNG service is isolated on a private `searx_internal` network.
-- Rate limiting uses Valkey with a private-IP allowlist so LibreChat doesn't trip bot detection.
-- LibreChat reaches SearXNG auth, Firecrawl API, and Jina on `search_gateway`; Firecrawl backing services stay on a separate `search` network. SearXNG + Firecrawl web-fetch traffic is routed through Squid on a dedicated `search_egress` subnet so requests are auditable in proxy logs.
-- The Jina compatibility patch makes `batch_size` optional — LibreChat's client omits it.
-- A mounted search patch caps scraped text, requests `markdown` + `onlyMainContent`, and strips raw `content` from the artifact returned to the model.
-- Per-run scrape cache + duplicate-results note: small models loop on near-identical searches within one reply, re-scraping the same top-ranked pages. Raw scrape responses are cached per tool instance (= per agent run, max 40 URLs), so repeats skip Firecrawl while highlights are still reranked against the current query; when a search mostly re-returns already-shown pages, the model output gets an explicit `[Note: X of Y results were already returned …]` nudge. Results are never filtered — citation anchors and the UI source list are unaffected.
-- Search requests are paced per provider (`LIBRECHAT_SEARXNG_MIN_INTERVAL_MS`, default 1000 ms between request starts, plus a random `LIBRECHAT_SEARXNG_JITTER_MS`, default 0–1000 ms, so the cadence doesn't look mechanical to bot detection): upstream engines suspend under bursts from one egress IP (DDG CAPTCHA, Brave 429, Qwant access denied), which surfaced as silent zero-result searches when the model fired parallel `web_search` calls.
-- A search that still ends with zero sources gets a synthetic placeholder entry injected into the **UI artifact only** (`No results — "<query>"` / `Search failed — …`, linking to the same query on DuckDuckGo), so the "Searched the web" label stays expandable instead of rendering as a dead label. The model output and citation references are untouched.
-- Optional Brave fallback: with `BRAVE_API_KEY` set (and no provider override), an empty or failed SearXNG response is retried once via the Brave Search API. Logs never include the query — only the fallback reason and HTTP status.
-- After editing files under `optional/local-search/jina/`, recreate the container to pick up changes.
+- Set a strong `SEARXNG_API_KEY` in `.env` — internal search calls are authenticated with it.
+- Optional: set `BRAVE_API_KEY` to retry an empty or failed SearXNG response once via the Brave Search API.
+
+When changing search config:
+
+- After editing files under `optional/local-search/jina/`, recreate the container.
 - After editing files under `optional/local-search/librechat-patches/`, rebuild the LibreChat image (`docker compose … build api`) and recreate `api` — the start script does not `--build`.
-- Set a strong `SEARXNG_API_KEY` in `.env` (don’t leave placeholders) so internal search calls are authenticated.
-
-</details>
 
 ---
 
@@ -247,26 +211,15 @@ docker exec LibreChat sh -c 'curl -sS -X POST http://embeddings:8000/v1/embeddin
   -d "{\"input\":\"hello\",\"model\":\"intfloat/multilingual-e5-large\"}" | head -c 200'
 ```
 
-The default model is **`intfloat/multilingual-e5-large`** (1024-dim, multilingual, baked into the image at build time — ~2.5GB). CPU inference: ~10–20 docs/sec batch, sub-second per query on M-series. Override with `EMBEDDINGS_MODEL=<fastembed-supported-model>` and rebuild.
+The default model is **`intfloat/multilingual-e5-large`** (1024-dim, multilingual). The first build downloads it from Hugging Face (~2.5GB); after that the container runs offline. CPU inference: ~10–20 docs/sec batch, sub-second per query on M-series. Override with `EMBEDDINGS_MODEL=<fastembed-supported-model>` and rebuild; raise `EMBEDDINGS_MAX_BATCH` (default 64) for large corpora.
 
-The overlay also rewires `rag_api`: when `ENABLE_EMBEDDINGS=1`, `RAG_OPENAI_BASEURL` points at the local container automatically — `.env` doesn't need any embedding-provider config.
-
-<details>
-<summary>Implementation notes</summary>
-
-- The container is built locally from `optional/embeddings/Dockerfile`. First build downloads the model from Hugging Face (~2.5GB); subsequent runs are offline (`HF_HUB_OFFLINE=1`).
-- Attached only to the `lan` network — same posture as `vectordb` and the databases. No WAN egress, no path to Squid. Verifiable via `docs/egress-policy.md`.
-- Hardened identically to other stack services: `read_only: true`, `cap_drop: ALL`, `no-new-privileges`, runs as UID 10001.
-- Exposes OpenAI's `/v1/embeddings` shape; `rag_api` (which uses the OpenAI client) talks to it without code changes.
-- `MAX_BATCH_SIZE=64` by default — increase via `EMBEDDINGS_MAX_BATCH` if you index large corpora.
-
-</details>
+With `ENABLE_EMBEDDINGS=1`, `RAG_OPENAI_BASEURL` points at the local container automatically — `.env` needs no embedding-provider config. The container sits on the `lan` network only, like the databases: no WAN egress, no path to Squid.
 
 ---
 
 ### Ollama bridge (local LLMs on the host)
 
-If you're already running [Ollama](https://ollama.com/) on the host (macOS native build with Metal acceleration, or wherever), this overlay surfaces every model it has pulled inside LibreChat as the **`Ollama`** custom endpoint.
+If you run [Ollama](https://ollama.com/) on the host (e.g. the macOS native build with Metal acceleration), this overlay surfaces every model it has pulled inside LibreChat as the **`Ollama`** custom endpoint.
 
 ```bash
 # Ensure ollama is running on the host first
@@ -274,7 +227,7 @@ ollama list           # should show your models
 ENABLE_OLLAMA=1 ./scripts/start_stack.sh
 ```
 
-In LibreChat the new endpoint will appear in the model picker; `fetch: true` populates the model list automatically from whatever the host has pulled.
+The endpoint appears in the model picker; `fetch: true` populates the model list from whatever the host has pulled. The bridge is a small reverse proxy that forwards to the host's Ollama at `host.docker.internal:11434`; it is reachable only from inside the stack, so no API key is needed. The first request to a cold model can take 30s+ while it loads into RAM.
 
 ```bash
 # Verify end-to-end (LibreChat → ollama-proxy → host → Ollama)
@@ -284,17 +237,6 @@ op = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 print(json.loads(op.open('http://ollama-proxy:11434/v1/models', timeout=5).read())['data'])
 "
 ```
-
-<details>
-<summary>Implementation notes</summary>
-
-- `ollama-proxy` is a tiny Caddy reverse-proxy container — same pattern as `code-interpreter-proxy`. It listens on `:11434` and forwards to `host.docker.internal:11434`.
-- LibreChat (and every other in-stack service) sits on `internal: true` networks, so there's no IP route to the host bridge gateway from `lan`. The proxy is on two networks: `lan` (to face LibreChat) plus a dedicated narrow bridge `ollama_egress` (to face the host). Only `ollama-proxy` lives on `ollama_egress` — asserted in the smoke. See `docs/egress-policy.md` for the threat model.
-- The Caddyfile rewrites `Host` to `127.0.0.1:11434` because Ollama's built-in host-allowlist (DNS-rebinding defense) silently 403s any other Host header.
-- No API key required — Ollama doesn't enforce auth, and the proxy is reachable only from inside the stack.
-- Models are loaded into RAM lazily on first use. The first request to a cold model can take 30s+ on consumer hardware; subsequent calls are warm.
-
-</details>
 
 ---
 
@@ -307,8 +249,8 @@ ENABLE_STATIC_PREVIEW=1 ./scripts/start_stack.sh
 ```
 
 Preview is at `http://127.0.0.1:4324`.
-Set `SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324` in `.env` so relay hostnames like `id-preview.localhost` resolve correctly and keep Service Worker support on HTTP.
-The dynamic Sandpack bundler URL remains `http://127.0.0.1:80`, but that ingress is now provided by `api-proxy` (the `sandpack` container is no longer host-published directly).
+Set `SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324` in `.env` so relay hostnames like `id-preview.localhost` resolve correctly and Service Worker support stays on HTTP.
+The dynamic Sandpack bundler URL stays `http://127.0.0.1:80`, served through `api-proxy`.
 
 > **LAN note:** defaults are localhost-only. If you expose to your network, also update `DOMAIN_CLIENT`, `DOMAIN_SERVER`, and CORS origins.
 
@@ -322,9 +264,7 @@ The dynamic Sandpack bundler URL remains `http://127.0.0.1:80`, but that ingress
 ./scripts/stop_stack.sh --keep-colima         # remove containers but keep the VM running
 ```
 
-**Your data is preserved in every mode** — `docker volume rm` is not invoked. The 15 named volumes that hold state (chat history in `mongo_data`, RAG vectors in `pgdata2`, uploaded files in `lbc_api_uploads`, the Jina model cache, conversation search indexes in `meili_data`, code-interpreter sandboxes, runtime secrets, etc.) stay on disk and are picked up automatically on the next `start_stack.sh`.
-
-Stop modes:
+**Your data is preserved in every mode** — named volumes (chat history, RAG vectors, uploads, search indexes, runtime secrets) stay on disk and are picked up on the next `start_stack.sh`.
 
 | Mode | Command | What happens | Host RAM | Restart speed |
 |---|---|---|---|---|
@@ -332,7 +272,7 @@ Stop modes:
 | **`down`, keep VM** | `./scripts/stop_stack.sh --keep-colima` | Containers + networks removed; Colima VM keeps its allocated RAM. | Most freed | ~30s |
 | **`pause`** | `./scripts/stop_stack.sh --pause` | Containers stopped but kept around; VM stays up (implicit). | Mostly held | ~5s |
 
-The script doesn't accept a `-v` / `--remove-volumes` flag on purpose — wiping state should be a deliberate two-step process, not a tab-complete away. To start fresh:
+The script has no volume-wiping flag on purpose. To start fresh:
 
 ```bash
 ./scripts/stop_stack.sh
@@ -352,8 +292,8 @@ Installs a macOS LaunchAgent that runs `start_stack.sh` at login. Logs: `~/Libra
 ## CI & Dependency Updates
 
 - **Stack Smoke** (`.github/workflows/stack-smoke.yml`) runs on push/PR to `main` and `dev`. Tests egress policy, OpenCode reachability, code interpreter execution, agent tool flow, and local search end-to-end.
-- Local smoke behavior: `scripts/ci/smoke.sh` keeps volumes by default (`SMOKE_CLEAN_VOLUMES=0`) so chat history persists on your machine. Set `SMOKE_CLEAN_VOLUMES=1` when you intentionally want a full data reset.
-- **Renovate** ([renovate.json](renovate.json)) runs weekly targeting `dev`, with dry-run validation on config pushes. Needs a `RENOVATE_TOKEN` repo secret (`repo` + `workflow` scopes) for real PRs.
+- Local runs of `scripts/ci/smoke.sh` keep volumes by default (`SMOKE_CLEAN_VOLUMES=0`) so chat history persists. Set `SMOKE_CLEAN_VOLUMES=1` for a full data reset.
+- **Renovate** ([renovate.json](renovate.json)) runs weekly targeting `dev`. Needs a `RENOVATE_TOKEN` repo secret (`repo` + `workflow` scopes) for real PRs.
 
 ---
 
@@ -383,16 +323,16 @@ open http://localhost:3081
 
 **Artifact preview is blank / `non-precached-url` in console?**
 ```bash
-# Stack now disables LibreChat's bundled service worker by default.
-# Do one-time cleanup in browser: clear site data for localhost and reload.
+# The stack disables LibreChat's bundled service worker by default.
+# One-time cleanup: clear site data for localhost in the browser and reload.
 # Also verify:
 #   SANDPACK_BUNDLER_URL=http://127.0.0.1:80
 #   SANDPACK_STATIC_BUNDLER_URL=http://preview.localhost:4324
 #
-# If you see a CORS error (method not allowed) for 127.0.0.1:80 or
-# preview.localhost:4324, the narrowed CORS methods are the cause (see TODO):
-# restore "GET, POST, PUT, DELETE, OPTIONS" in optional/api-proxy/Caddyfile (:81)
-# and optional/static-preview/Caddyfile, then re-run populate + restart api-proxy.
+# If the console shows a CORS "method not allowed" error for 127.0.0.1:80 or
+# preview.localhost:4324, restore "GET, POST, PUT, DELETE, OPTIONS" in
+# optional/api-proxy/Caddyfile (:81) and optional/static-preview/Caddyfile,
+# then re-run the populate script and restart api-proxy.
 ```
 
 **Reduce log volume further (or loosen it):**
@@ -434,22 +374,14 @@ Linux VM with **rootless Docker** instead, see
 cgroup limit delegation, the nsjail code interpreter, UID mapping, and systemd
 autostart (the Colima/LaunchAgent tooling is macOS-only).
 
+## Known limitations
+
+- `code-interpreter-api` needs `SYS_ADMIN` + `apparmor:unconfined` for the current nsjail runtime.
+- The localhost ingress proxies are attached to a non-internal `ingress` bridge, because host port publishing fails in this Docker/Colima setup when a container sits only on internal networks. The bridge has IP masquerading disabled, so it grants no useful outbound access.
+- Search egress is auditable but not domain-allowlisted, to preserve SearXNG/Firecrawl web fetching.
+
 ## Acknowledgements
 
 Compose foundation adapted from [nicedexter](https://github.com/nicedexter).
 
-## TODO
-
-- ⚠️ **UNVERIFIED: Sandpack artifact-preview CORS.** The CORS allow-methods on
-  the Sandpack bundler ingress (`optional/api-proxy/Caddyfile` `:81`) and the
-  static preview (`optional/static-preview/Caddyfile`) were narrowed from
-  `GET, POST, PUT, DELETE, OPTIONS` to `GET, POST, OPTIONS`. This was **not**
-  verified against a live browser artifact render (the dev session couldn't
-  reach the loopback preview URLs). Low risk — the bundler is GET + `postMessage`
-  — but **confirm by rendering a code artifact in the browser**. If the preview
-  panel is blank with a CORS error in the console, restore `PUT, DELETE` on both
-  Caddyfiles (one line each). See the troubleshooting note above.
-- Remaining known constraints (accepted for now):
-  - `code-interpreter-api` still needs `SYS_ADMIN` + `apparmor:unconfined` for current nsjail runtime.
-  - Localhost ingress proxies remain dual-homed with `ingress` because host port publishing fails when attached only to internal networks in this Docker/Colima setup.
-  - Search egress is intentionally auditable-not-allowlisted (to preserve SearX/Firecrawl web fetch behavior).
+[1]: https://github.com/abiosoft/colima

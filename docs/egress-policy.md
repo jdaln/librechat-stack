@@ -1,7 +1,7 @@
-# Egress Policy (live state)
+# Egress Policy
 
-Concise, live-verified summary of which containers can reach the internet and
-under what rules. Source of truth: `optional/egress-proxy/squid.conf` +
+Which containers can reach the internet, and under what rules. Source of
+truth: `optional/egress-proxy/squid.conf` +
 `optional/egress-proxy/allowed_domains.txt`.
 
 ## Per-container capability
@@ -40,18 +40,16 @@ under what rules. Source of truth: `optional/egress-proxy/squid.conf` +
 `wan` (its sole internet leg), `api_egress` (where `api` + `rag_api` reach it),
 and `search_egress` (the search tier). The data stores — `chat-mongodb`,
 `chat-meilisearch`, `vectordb`, `embeddings` — live on `lan` *only*, which has
-no path to the proxy. So a compromised data store cannot use Squid as an
-egress relay: there is no network route to it, not merely an unused-but-open
-one. This is enforced in CI (`scripts/ci/smoke.sh` asserts `egress-proxy` is
-absent from `lan` and that `api_egress` is `internal`).
+no path to the proxy. A compromised data store cannot use Squid as an egress
+relay: there is no network route to it. This is enforced in CI
+(`scripts/ci/smoke.sh` asserts `egress-proxy` is absent from `lan` and that
+`api_egress` is `internal`).
 
 ## What "Allowlist (LAN policy)" allows
 
-These rules apply to the clients that can actually reach the proxy on
-`api_egress` — `LibreChat` (api) and `rag_api`. (The policy is named for
-historical reasons; the clients are no longer on `lan` with the proxy.)
-They run *after* the universal deny rules (RFC1918, link-local, multicast,
-`localhost` / `.local` / `.internal`).
+These rules apply to the clients that can reach the proxy on `api_egress` —
+`LibreChat` (api) and `rag_api`. They run *after* the universal deny rules
+(RFC1918, link-local, multicast, `localhost` / `.local` / `.internal`).
 
 Exact domains in `optional/egress-proxy/allowed_domains.txt`:
 
@@ -103,29 +101,22 @@ two networks:
 
 - **`lan`** — so LibreChat (which never leaves `lan`) can reach it like
   any other in-stack service: `http://ollama-proxy:11434/v1`.
-- **`ollama_egress`** (new, narrow bridge) — gives the container an IP
-  route to `host.docker.internal` (the Colima/Docker host gateway) so it
-  can reverse-proxy LibreChat's request to the host's Ollama daemon at
+- **`ollama_egress`** (narrow bridge) — gives the container an IP route to
+  `host.docker.internal` (the Colima/Docker host gateway) so it can
+  reverse-proxy LibreChat's requests to the host's Ollama daemon at
   `127.0.0.1:11434`. NAT/masquerade is enabled on this bridge because
   outbound packets to the host gateway need their source rewritten.
 
-This means **`ollama-proxy` can technically reach the public internet**
-(masquerade is on), bypassing Squid. Three mitigations preserve the
-overall posture:
+Because masquerade is on, **`ollama-proxy` can technically reach the public
+internet**, bypassing Squid. Mitigations:
 
-1. **Only `ollama-proxy` is on `ollama_egress`** — asserted in the
-   smoke. No other container ever sees this bridge.
-2. **`ollama-proxy` is `read_only: true`, `cap_drop: ALL`** — same
-   hardening as every other proxy in the stack. There's no shell or
-   write target inside.
-3. **The Caddyfile has one upstream** — `http://host.docker.internal:11434`.
-   No dynamic destinations, no path that fans out elsewhere.
+- Only `ollama-proxy` is on `ollama_egress` (asserted in the smoke test).
+- The container is `read_only: true`, `cap_drop: ALL` — no shell, no write target.
+- Its Caddyfile has one fixed upstream: `http://host.docker.internal:11434`.
 
-Net: a compromised LibreChat or `ollama-proxy` would have to break out
-of the read-only container AND rewrite Caddy's config in memory to
-exfiltrate via this path. The cost-to-benefit of keeping ollama-proxy
-on a wide-open bridge is high (every other path remains as before), so
-we accept this single-container exception.
+Exfiltrating via this path would require breaking out of the read-only
+container and rewriting Caddy's config in memory; this single-container
+exception is accepted.
 
 ## Verifying live
 
@@ -163,7 +154,7 @@ Swap `LibreChat` for `searxng` to see the broad policy: both return `200`.
 Edit `optional/egress-proxy/allowed_domains.txt`, then:
 
 ```bash
-docker-compose -f docker-compose.yml -f compose.hardening.yml \
+docker compose -f docker-compose.yml -f compose.hardening.yml \
   restart egress-proxy
 ```
 

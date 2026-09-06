@@ -1,18 +1,15 @@
 # Running the stack on Linux with rootless Docker
 
-This guide adapts the stack (designed for macOS + Colima, Docker running as root
-inside the VM) to a **Linux VM running [rootless Docker](https://docs.docker.com/engine/security/rootless/)**,
-where the Docker daemon runs as an unprivileged user and every container is
-already inside a user namespace.
-
-Most of the stack works unchanged. The parts that need attention are all
-consequences of "no root": **binding port 80**, **enforcing the memory/CPU
-limits**, and **the nsjail code interpreter**. Read [§3](#3-the-port-80-problem-required)
+This guide adapts the stack (designed for macOS + Colima) to a **Linux VM
+running [rootless Docker](https://docs.docker.com/engine/security/rootless/)**.
+Most of it works unchanged; the parts that need attention are all consequences
+of "no root": **binding port 80**, **enforcing the memory/CPU limits**, and
+**the nsjail code interpreter**. Read [§3](#3-the-port-80-problem-required)
 and [§4](#4-resource-limits-cgroup-v2--delegation-do-this) before your first run.
 
-> The `scripts/start_stack.sh` helper, the autostart LaunchAgent, and the
-> backup scripts' `DOCKER_CONTEXT` default are **macOS/Colima-specific** — do
-> not run them as-is on Linux. This guide gives the Linux equivalents.
+> `scripts/start_stack.sh`, the autostart LaunchAgent, and the backup scripts'
+> `DOCKER_CONTEXT` default are **macOS/Colima-specific** — do not run them
+> as-is on Linux. This guide gives the Linux equivalents.
 
 ---
 
@@ -104,8 +101,8 @@ echo 'net.ipv4.ip_unprivileged_port_start=80' | sudo tee /etc/sysctl.d/99-rootle
 sudo sysctl --system
 ```
 
-On a single-purpose VM this is a reasonable trade (any unprivileged process may
-now bind 80–1023). Nothing else changes.
+Trade-off: any unprivileged process on the VM may then bind 80–1023. Nothing
+else changes.
 
 ### Option B — remap the bundler port (no host change)
 
@@ -130,8 +127,8 @@ LibreChat the new browser-facing URL.
 3. Add `-f compose.rootless.yml` to **every** compose command (after
    `compose.hardening.yml`, before the optional overlays).
 
-> The plain additive merge is a trap: without `!override`, adding a `:8080`
-> mapping leaves the `:80` mapping in place and rootless still fails to bind it.
+> Without `!override`, the `:80` mapping stays in place and rootless still
+> fails to bind it.
 
 The static-preview overlay (`4324`) and code-interpreter (`8001`) are already
 above 1024 — no change needed.
@@ -141,9 +138,9 @@ above 1024 — no change needed.
 ## 4. Resource limits: cgroup v2 + delegation (do this)
 
 The stack sets `mem_limit`, `cpus`, and `pids_limit` on every service to keep a
-small VM from OOMing (e.g. an unbounded RabbitMQ under crawl load). Under
-rootless these are **only enforced if the controllers are delegated to your
-user session**, otherwise Docker logs a warning and ignores them.
+small VM from OOMing. Under rootless these are **only enforced if the
+controllers are delegated to your user session**; otherwise Docker logs a
+warning and ignores them.
 
 Check:
 
@@ -221,14 +218,12 @@ This overlay is the **least likely to work rootless.** Recommended order:
    docker compose ... -f optional/code-interpreter/compose.yml up -d code-interpreter-api
    docker logs -f code-interpreter-api   # look for nsjail "Launching child process failed"
    ```
-   If nsjail still fails to launch, this stack's interpreter cannot run under
-   your rootless/host combination without further host changes (or a rootful
-   daemon for that one service). Treat it as out of scope for a hardened
-   rootless deployment.
+   If nsjail still fails to launch, the interpreter cannot run under your
+   rootless/host combination without further host changes (or a rootful daemon
+   for that one service) — run without this overlay.
 
 `apparmor:unconfined` itself may be rejected by some rootless setups; if the
-container refuses to start, that confirms the host won't grant what nsjail
-needs.
+container refuses to start, the host won't grant what nsjail needs.
 
 ---
 
@@ -313,8 +308,7 @@ journalctl --user -u librechat-stack -f      # logs
 ## 9. Things from the main README that change
 
 - **`userns-remap` daemon.json tweak** (README "user-namespace remapping"):
-  that's for the **rootful** daemon. Rootless already runs in a user namespace —
-  skip it entirely (it would conflict).
+  rootful-only. Rootless already runs in a user namespace — skip it.
 - **`scripts/start_stack.sh`**: Colima-only — use [§7](#7-bringing-the-stack-up-linux).
 - **`scripts/install_autostart_launchagent.sh`**: macOS LaunchAgent — use the
   systemd user unit in [§8](#8-autostart-with-systemd-replaces-the-launchagent).
@@ -325,7 +319,7 @@ journalctl --user -u librechat-stack -f      # logs
   DOCKER_CONTEXT=default BACKUP_ROOT="$HOME/Backups/LibreChatBackups" \
     ./backup/backup_librechat.sh
   ```
-  Schedule with a systemd `--user` timer or `crontab -e` (the host user's cron).
+  Schedule with a systemd `--user` timer or the host user's cron.
 - **Jina reranker build cache**: set `JINA_RERANKER_CACHE_ROOT=$HOME/.cache/librechat-stack`
   (the script defaults to a macOS path). The code-interpreter prepare script
   already uses `$XDG_CACHE_HOME`/`~/.cache`.
@@ -373,9 +367,8 @@ commands above plus a login + chat in the browser rather than the full smoke.
 
 ## What is unchanged from the macOS/Colima setup
 
-The egress-proxy allowlist + dnsmasq supervision, the internal-network
-isolation and fixed subnets (`172.31.x`), the per-service secrets-volume
-subpaths, read-only rootfs + dropped capabilities, healthchecks, image digest
-pins, and the model presets all behave identically — they're namespace- and
-daemon-agnostic. The differences above are entirely about *not having root on
-the host*.
+The egress-proxy allowlist, the internal-network isolation and fixed subnets
+(`172.31.x`), the per-service secrets-volume subpaths, read-only rootfs +
+dropped capabilities, healthchecks, image digest pins, and the model presets
+all behave identically. The differences above are entirely about not having
+root on the host.
