@@ -226,7 +226,7 @@ SEARXNG_API_KEY=24389_CHANGE_ME
 SEARXNG_PORT=8080
 SEARXNG_BASE_URL=http://searxng:8080/
 SEARXNG_SECRET=24389_CHANGE_ME
-SEARXNG_IMAGE=searxng/searxng:latest@sha256:3eb2fcb2153e0b1f8e9f3457695ed3db1b1443d1dbc2b6d23121835d33fd50aa
+SEARXNG_IMAGE=searxng/searxng:latest@sha256:3547509b419cd6a67333d6d68bd1ffad8d46d3669d82e7a7bd538f7b45827432
 SEARXNG_VALKEY_IMAGE=valkey/valkey:9.0.4-alpine@sha256:d1cc70645bbcef743615463a2fa4616e841407545e18f560aed0c49671a90147
 # Search locale sent to SearXNG. 'auto' detects the query language and picks
 # the matching engine market; 'all' (old upstream default) mixes locales and
@@ -267,10 +267,10 @@ FIRECRAWL_CRAWL_CONCURRENT_REQUESTS=4
 FIRECRAWL_BROWSER_POOL_SIZE=2
 FIRECRAWL_NUQ_WORKER_COUNT=1
 FIRECRAWL_MAX_CONCURRENT_PAGES=4
-FIRECRAWL_IMAGE=ghcr.io/firecrawl/firecrawl:latest@sha256:6c5049312506841d85e0bc386da34656630645dca867d72e9a33aa01a1f1b519
-FIRECRAWL_PLAYWRIGHT_IMAGE=ghcr.io/firecrawl/playwright-service:latest@sha256:9e0737bc09df28275aab29726b1c0824a7725113945434e843385d487b7f7ec6
+FIRECRAWL_IMAGE=ghcr.io/firecrawl/firecrawl:latest@sha256:9a1ff658e2b57dd6d50317b3a908a03b532c06b4c46410a98c6df62d826a04d9
+FIRECRAWL_PLAYWRIGHT_IMAGE=ghcr.io/firecrawl/playwright-service:latest@sha256:df1a393ce8bfc3801570a826a9b0dcc400ae48789adb4a0ad9d6cbf0229b059b
 FIRECRAWL_POSTGRES_BASE_IMAGE=postgres:17.9-bookworm@sha256:47f917f7409eacd22fc5dfb1dee634e1b55cf0c01d1a7eb701be2227a03e0641
-FIRECRAWL_POSTGRES_SCHEMA_IMAGE=ghcr.io/firecrawl/nuq-postgres:latest@sha256:f9388bd25ae2e1f1d034518236f993ce236173c1d8800ce24092ea6643a95a33
+FIRECRAWL_POSTGRES_SCHEMA_IMAGE=ghcr.io/firecrawl/nuq-postgres:latest@sha256:aed86f62858f29bd971abddcdeb301c12888098d2cf5d33c1ba42b053bc460f6
 FIRECRAWL_REDIS_IMAGE=redis:8.6.3-alpine@sha256:d146f83b1e0f02fc27c26a50cee39338c736674c5959db84363e6ae3cd9e02d2
 FIRECRAWL_RABBITMQ_ERLANG_COOKIE=local-firecrawl-rabbit-cookie
 FIRECRAWL_RABBITMQ_IMAGE=rabbitmq:4.3.0-management@sha256:8f3ab1dc6fb3b17ff59ba4e9ceed187c1711a4af831242b733b1e6949625b315
@@ -310,6 +310,16 @@ LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT=16000
 LIBRECHAT_SEARXNG_MIN_INTERVAL_MS=1000
 LIBRECHAT_SEARXNG_JITTER_MS=1000
 LIBRECHAT_BRAVE_MIN_INTERVAL_MS=1100
+# Tier escalation when the primary engine set rate-limits (k8s-style
+# full-jitter circuit breaker): the primary tier is skipped for
+# random(0, min(CAP, BASE*2^penalty)) ms and queries go to the reserve
+# engines (explicit engines= pin), used ONLY during rate-limiting — never to
+# fill a genuine no-hit. Keep junk-prone engines out (bing substituted
+# cross-locale noise for results, 2026-09-08). Penalty resets on a primary
+# success. Brave API stays the really-last resort (BRAVE_API_KEY above).
+LIBRECHAT_SEARXNG_BACKOFF_BASE_MS=10000
+LIBRECHAT_SEARXNG_BACKOFF_CAP_MS=240000
+LIBRECHAT_SEARXNG_RESERVE_ENGINES=mojeek,wikipedia
 
 # The domain for the client and server. These are used for CORS and other
 # internal settings. For a local setup, the default is usually correct.

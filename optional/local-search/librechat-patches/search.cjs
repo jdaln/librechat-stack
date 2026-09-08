@@ -66,6 +66,18 @@ const BRAVE_MIN_INTERVAL_MS = Math.max(0, Number.parseInt(process.env.LIBRECHAT_
 const searxngQueue = createRateLimitedQueue(SEARXNG_MIN_INTERVAL_MS, SEARXNG_JITTER_MS);
 const braveQueue = createRateLimitedQueue(BRAVE_MIN_INTERVAL_MS);
 
+// Primary-tier circuit breaker (k8s-style full-jitter backoff). When the
+// default engine set rate-limits (degraded result), the circuit opens for
+// random(0, min(CAP, BASE * 2^penalty)) ms and calls go straight to the
+// reserve engine tier instead of re-poking the angry engines — which extends
+// their bans. A primary success resets the penalty. Module-level so the
+// state spans tool instances (one per agent run).
+const BACKOFF_BASE_MS = Math.max(0, Number.parseInt(process.env.LIBRECHAT_SEARXNG_BACKOFF_BASE_MS ?? '10000', 10) || 0);
+const BACKOFF_CAP_MS = Math.max(BACKOFF_BASE_MS, Number.parseInt(process.env.LIBRECHAT_SEARXNG_BACKOFF_CAP_MS ?? '240000', 10) || 0);
+const BACKOFF_MAX_EXPONENT = 6;
+let searxngPenalty = 0;
+let searxngPrimaryBlockedUntil = 0;
+
 const chunker = {
     cleanText: (text) => {
         if (!text)
@@ -228,7 +240,7 @@ const createSearXNGAPI = (instanceUrl, apiKey) => {
     if (config.instanceUrl == null || config.instanceUrl === '') {
         throw new Error('SEARXNG_INSTANCE_URL is required for SearXNG API');
     }
-    const getSources = async ({ query, numResults = DEFAULT_SEARCH_RESULT_COUNT, safeSearch, type, }) => {
+    const getSources = async ({ query, numResults = DEFAULT_SEARCH_RESULT_COUNT, safeSearch, type, engines, }) => {
         if (!query.trim()) {
             return { success: false, error: 'Query cannot be empty' };
         }
@@ -268,7 +280,15 @@ const createSearXNGAPI = (instanceUrl, apiKey) => {
             // instances that curate their engine set server-side (google is
             // removed in ours, silently leaving bing+ddg only). Only pin engines
             // when explicitly configured; otherwise settings.yml decides.
-            if (process.env.SEARXNG_ENGINES) {
+            if (engines) {
+                // Explicit per-call engine pin (reserve tier). engines= is only
+                // exclusive when categories is OMITTED — with categories set,
+                // SearXNG adds the category's default engines on top (verified
+                // against this instance).
+                params.engines = engines;
+                delete params.categories;
+            }
+            else if (process.env.SEARXNG_ENGINES) {
                 params.engines = process.env.SEARXNG_ENGINES;
             }
             const headers = {
@@ -283,6 +303,19 @@ const createSearXNGAPI = (instanceUrl, apiKey) => {
                 timeout: config.timeout,
             });
             const data = response.data;
+            // Zero results with unresponsive engines = the engines rate-limited
+            // us, not a genuine no-hit. Surface it as a distinct failure so the
+            // tier-escalation wrapper (and eventually the model note) can react;
+            // a real no-hit keeps returning an empty success.
+            const unresponsive = Array.isArray(data.unresponsive_engines) ? data.unresponsive_engines : [];
+            if ((data.results ?? []).length === 0 && unresponsive.length > 0) {
+                const names = unresponsive.map((e) => (Array.isArray(e) ? e[0] : e)).filter(Boolean).join(', ');
+                return {
+                    success: false,
+                    degraded: true,
+                    error: `Search engines rate-limited: ${names}`,
+                };
+            }
             // Helper function to identify news results since SearXNG doesn't provide that classification by default
             const isNewsResult = (result) => {
                 const url = result.url?.toLowerCase() ?? '';
@@ -579,14 +612,16 @@ const createSearchAPI = (config) => {
     }
     else if (provider === 'searxng') {
         const searxng = createSearXNGAPI(searxngInstanceUrl, searxngApiKey);
-        // With BRAVE_API_KEY configured, an empty or failed SearXNG response
-        // retries once via the Brave Search API: engine suspensions upstream
-        // (CAPTCHA/429 under burst) otherwise surface as silent zero-result
-        // searches. Query text must never be logged (logging privacy policy).
-        if (!process.env.BRAVE_API_KEY) {
-            return searxng;
-        }
+        // Tier escalation (query text must never be logged — privacy policy):
+        //   0. primary  — default curated engine set (skipped while its circuit
+        //      is open after a rate-limit, see the module-level backoff state)
+        //   1. reserve  — explicit engines= pin, used ONLY while the primary
+        //      tier is rate-limited (never to "fill" a genuine no-hit). Keep
+        //      junk-prone engines out of this list: bing was tried and served
+        //      cross-locale trending noise instead of results (2026-09-08).
+        //   2. Brave Search API — really-last resort, only with BRAVE_API_KEY
         const logger = utils.createDefaultLogger();
+        const RESERVE_ENGINES = (process.env.LIBRECHAT_SEARXNG_RESERVE_ENGINES ?? 'mojeek,wikipedia').trim();
         let brave = null;
         const isEmptyResult = (data, type) => {
             if (data == null) {
@@ -603,29 +638,87 @@ const createSearchAPI = (config) => {
             }
             return (data.organic?.length ?? 0) === 0 && (data.topStories?.length ?? 0) === 0;
         };
-        const getSources = async (params) => {
-            const primary = await searxng.getSources(params);
-            if (primary.success === true && !isEmptyResult(primary.data, params.type)) {
-                return primary;
+        const tryBrave = async (params) => {
+            if (!process.env.BRAVE_API_KEY) {
+                return null;
             }
             try {
                 if (brave == null) {
                     brave = createBraveAPI();
                 }
-                logger.warn(`SearXNG ${primary.success === true ? 'returned no results' : 'failed'}; retrying via Brave Search API`);
-                const secondary = await brave.getSources(params);
-                if (secondary.success === true) {
-                    return secondary;
+                logger.warn('SearXNG tiers exhausted; retrying via Brave Search API');
+                const result = await brave.getSources(params);
+                if (result.success === true && !isEmptyResult(result.data, params.type)) {
+                    return result;
                 }
                 // Error bodies can echo the query — log the HTTP status only.
-                const status = /HTTP \d+/.exec(secondary.error ?? '')?.[0] ?? 'no HTTP status';
+                const status = /HTTP \d+/.exec(result.error ?? '')?.[0] ?? 'no HTTP status';
                 logger.error(`Brave fallback failed too (${status})`);
-                return primary;
+                return null;
             }
             catch (error) {
                 logger.error(`Brave fallback error: ${error instanceof Error ? error.message : String(error)}`);
-                return primary;
+                return null;
             }
+        };
+        const getSources = async (params) => {
+            const circuitOpen = Date.now() < searxngPrimaryBlockedUntil;
+            let escalate = circuitOpen;
+            let primary = null;
+            if (!circuitOpen) {
+                primary = await searxng.getSources(params);
+                if (primary.success === true && !isEmptyResult(primary.data, params.type)) {
+                    searxngPenalty = 0;
+                    return primary;
+                }
+                if (primary.degraded === true) {
+                    searxngPenalty = Math.min(searxngPenalty + 1, BACKOFF_MAX_EXPONENT);
+                    const window = Math.floor(Math.random() * Math.min(BACKOFF_CAP_MS, BACKOFF_BASE_MS * 2 ** searxngPenalty));
+                    searxngPrimaryBlockedUntil = Date.now() + window;
+                    logger.warn(`Primary search engines rate-limited; circuit open ${window}ms, escalating to reserve engines`);
+                    escalate = true;
+                }
+                else if (primary.success === true) {
+                    // Genuine no-hit (zero results, no unresponsive engines):
+                    // return it honestly. Escalating here lets weaker reserve
+                    // engines substitute junk for an honest empty result —
+                    // that's how bing's cross-locale noise leaked back in.
+                    return primary;
+                }
+                // Non-degraded failure (instance unreachable, bad key, …):
+                // the reserve tier shares the same instance, skip to Brave.
+            }
+            let reserve = null;
+            if (escalate && RESERVE_ENGINES) {
+                reserve = await searxng.getSources({ ...params, engines: RESERVE_ENGINES });
+                if (reserve.success === true && !isEmptyResult(reserve.data, params.type)) {
+                    return reserve;
+                }
+            }
+            const braveResult = await tryBrave(params);
+            if (braveResult) {
+                return braveResult;
+            }
+            if (escalate) {
+                // Primary is rate-limited and no other tier delivered — even a
+                // reserve empty-success surfaces as rate-limited here, since a
+                // soft "no results" would invite an immediate identical retry.
+                // The retry hint lets the model time its comeback instead of
+                // guessing (or giving up for the whole reply).
+                const waitS = Math.max(1, Math.ceil((searxngPrimaryBlockedUntil - Date.now()) / 1000));
+                const baseError = primary?.degraded === true && primary.error
+                    ? primary.error
+                    : 'Search engines rate-limited: primary engines cooling down';
+                return { success: false, degraded: true, error: `${baseError} (retry in ~${waitS}s)` };
+            }
+            // Non-rate-limit failures: prefer the most informative one, then a
+            // genuine empty success (soft "no results" note).
+            for (const r of [primary, reserve]) {
+                if (r && r.success === false) {
+                    return r;
+                }
+            }
+            return primary ?? reserve ?? { success: false, error: 'Search failed: no search tier available' };
         };
         return { getSources };
     }

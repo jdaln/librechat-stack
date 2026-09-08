@@ -19,6 +19,10 @@ use_default_settings:
       # results flowing when the big engines CAPTCHA/429 this egress IP under
       # load (observed 2026-09-02: DDG+Brave+Qwant+Startpage all suspended).
       - mojeek
+      # Bing is deliberately ABSENT — even as a rate-limit reserve engine it
+      # substitutes cross-locale trending junk (Spanish/Arabic noise pages)
+      # for real results when queried from proxy/datacenter IPs. Verified
+      # again 2026-09-08 when it briefly served as the reserve tier.
       # images
       - duckduckgo images
       - brave.images

@@ -393,9 +393,18 @@ function createTool({ schema, search, onSearchResults: _onSearchResults, }) {
         // it can report that accurately instead of guessing.
         // WebSearch.tsx hides the whole entry when the tool output contains
         // the phrase "error processing" — make sure error text can't match.
-        const emptyNote = searchResult.error != null
-            ? `[Search failed: ${truncateText(String(searchResult.error), 300).replace(/error processing/gi, 'error-processing')}]\n\n`
-            : '[The search returned no results.]\n\n';
+        // A rate-limited backend (every tier failed) gets a firm STOP note:
+        // the soft "no results" phrasing invites query reformulation, which
+        // is exactly the loop that burns the run's recursion budget while
+        // extending the engine bans.
+        const rateLimited = typeof searchResult.error === 'string'
+            && searchResult.error.startsWith('Search engines rate-limited');
+        const retrySecs = /retry in ~(\d+)s/.exec(searchResult.error ?? '')?.[1];
+        const emptyNote = rateLimited
+            ? `[Search engines are rate-limiting requests. Do NOT retry web_search now — it will fail${retrySecs ? ` for roughly the next ${retrySecs} seconds` : ' for a while'}. Continue with other tools (e.g. open_url on pages you already know); after that you may retry web_search ONCE. If it fails again, answer with the information already gathered and tell the user that web search is temporarily degraded.]\n\n`
+            : searchResult.error != null
+                ? `[Search failed: ${truncateText(String(searchResult.error), 300).replace(/error processing/gi, 'error-processing')}]\n\n`
+                : '[The search returned no results.]\n\n';
         const hasAnySource = (compactResult.organic?.length ?? 0) + (compactResult.topStories?.length ?? 0) > 0;
         const statusPrefix = hasAnySource ? '' : emptyNote;
         // Small models loop on near-identical searches. When a new search mostly
@@ -457,7 +466,7 @@ function createTool({ schema, search, onSearchResults: _onSearchResults, }) {
                 const q = typeof query === 'string' ? query : '';
                 placeholder = {
                     position: 1,
-                    title: `${failed ? 'Search failed' : 'No results'} — "${q}"`,
+                    title: `${rateLimited ? 'Search rate-limited' : failed ? 'Search failed' : 'No results'} — "${q}"`,
                     // Clicking the row reruns the query in the user's own browser.
                     link: `https://duckduckgo.com/?q=${encodeURIComponent(q)}`,
                     snippet: failureSnippet,

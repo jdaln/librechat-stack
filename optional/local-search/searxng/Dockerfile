@@ -1,13 +1,9 @@
-ARG SEARXNG_IMAGE=searxng/searxng:2026.6.15-cf1410af8@sha256:37a8cc7769c4721b8f252ba935de8f01b7918e58d26b1be18dc87b5330fda65b
+ARG SEARXNG_IMAGE=searxng/searxng:latest@sha256:3547509b419cd6a67333d6d68bd1ffad8d46d3669d82e7a7bd538f7b45827432
 FROM ${SEARXNG_IMAGE}
 
 COPY optional/local-search/searxng/settings.yml /etc/searxng/settings.yml
 COPY optional/local-search/searxng/limiter.toml /etc/searxng/limiter.toml
-
-# DDG serves CAPTCHA to searxng's header order since ~2026-08-30 (searxng#6596);
-# upstream fix unmerged as of 2026-09-02. The script exits non-zero (failing the
-# build) if the upstream code drifted from its anchor.
-COPY optional/local-search/searxng/patch_ddg_header_order.py /tmp/patch_ddg_header_order.py
-RUN python3 /tmp/patch_ddg_header_order.py \
- && python3 -m compileall -q /usr/local/searxng/searx/engines/duckduckgo.py /usr/local/searxng/searx/network/client.py \
- && rm /tmp/patch_ddg_header_order.py
+# NOTE: the DDG header-order patch (searxng#6596 workaround) was removed
+# 2026-09-08: upstream merged the curl_cffi migration (searxng#6620) on
+# 2026-09-04, which gives engine requests browser-grade TLS/HTTP fingerprints
+# and supersedes the header reorder. See git history for the old patch.

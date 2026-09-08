@@ -254,6 +254,12 @@ services:
       HOST: 0.0.0.0
       PORT: 3002
       ENV: local
+      # Firecrawl's load-shedding guard reads the WHOLE VM's memory/CPU (not
+      # this container's cgroup) and refuses connections above the threshold
+      # (default 0.8). A busy Colima VM idles near ~85% RAM, which made the
+      # 2026-09 build stall its workers permanently. Raise to 0.95.
+      MAX_RAM: ${FIRECRAWL_MAX_RAM:-0.95}
+      MAX_CPU: ${FIRECRAWL_MAX_CPU:-0.95}
       FIRECRAWL_API_STARTUP_ATTEMPTS: ${FIRECRAWL_API_STARTUP_ATTEMPTS:-1200}
       HARNESS_STARTUP_TIMEOUT_MS: ${FIRECRAWL_HARNESS_STARTUP_TIMEOUT_MS:-1200000}
       LOGGING_LEVEL: ${FIRECRAWL_LOG_LEVEL:-warn}
