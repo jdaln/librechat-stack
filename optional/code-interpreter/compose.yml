@@ -1,7 +1,7 @@
 volumes:
   code_interpreter_sandbox_data: {}
   code_interpreter_redis_data: {}
-  code_interpreter_minio_data: {}
+  code_interpreter_garage_data: {}
 
 networks:
   code_interpreter:
@@ -112,7 +112,7 @@ services:
 
         targets = [
             ("code-interpreter-redis", 6379),
-            ("code-interpreter-minio", 9000),
+            ("code-interpreter-garage", 3900),
         ]
         deadline = time.monotonic() + 120
 
@@ -169,16 +169,12 @@ services:
       REDIS_PORT: 6379
       DO_NOT_TRACK: ${DO_NOT_TRACK:-1}
       HF_HUB_DISABLE_TELEMETRY: ${HF_HUB_DISABLE_TELEMETRY:-1}
-      S3_ENDPOINT: code-interpreter-minio:9000
-      S3_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:?set CODE_INTERPRETER_MINIO_ACCESS_KEY in .env}
-      S3_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:?set CODE_INTERPRETER_MINIO_SECRET_KEY in .env}
-      S3_BUCKET: ${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files}
+      S3_ENDPOINT: code-interpreter-garage:3900
+      S3_ACCESS_KEY: ${CODE_INTERPRETER_S3_ACCESS_KEY:?set CODE_INTERPRETER_S3_ACCESS_KEY in .env}
+      S3_SECRET_KEY: ${CODE_INTERPRETER_S3_SECRET_KEY:?set CODE_INTERPRETER_S3_SECRET_KEY in .env}
+      S3_BUCKET: ${CODE_INTERPRETER_S3_BUCKET:-code-interpreter-files}
+      S3_REGION: garage          # must match s3_region in optional/code-interpreter/garage.toml
       S3_SECURE: "false"
-      MINIO_ENDPOINT: code-interpreter-minio:9000
-      MINIO_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:?set CODE_INTERPRETER_MINIO_ACCESS_KEY in .env}
-      MINIO_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:?set CODE_INTERPRETER_MINIO_SECRET_KEY in .env}
-      MINIO_BUCKET: ${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files}
-      MINIO_SECURE: "false"
       PORT: 8000
       ENABLE_HTTPS: "false"
       LOG_LEVEL: ${CODE_INTERPRETER_LOG_LEVEL:-WARNING}
@@ -193,8 +189,8 @@ services:
     depends_on:
       code-interpreter-redis:
         condition: service_healthy
-      code-interpreter-minio-init:
-        condition: service_completed_successfully
+      code-interpreter-garage:
+        condition: service_healthy
     networks:
       code_interpreter:
         aliases:
@@ -239,54 +235,42 @@ services:
       start_period: 60s
     logging: *json_logging
 
-  code-interpreter-minio:
+  # Object store for the interpreter's files. Garage (dxflrs/garage): single
+  # node, S3 API on 3900, admin API on 3903, RPC on 3901 — none published. MinIO
+  # left Docker Hub and quay.io in September 2026 and Community Edition is
+  # archived, so it is not an option any more; LibreCodeInterpreter upstream
+  # moved to Garage as well. `--default-bucket` creates the access key and the
+  # bucket from the GARAGE_DEFAULT_* variables at start, so no init job is needed.
+  # Access key id format: GK + 32 hex characters (GK$(openssl rand -hex 16)).
+  code-interpreter-garage:
     <<: *harden
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
-    container_name: code-interpreter-minio
+    image: dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020
+    container_name: code-interpreter-garage
     mem_limit: "512m"
     cpus: "0.75"
-    cap_add:
-      - NET_BIND_SERVICE
     restart: always
+    command: ["/garage", "-c", "/run/secrets/garage_toml", "server", "--single-node", "--default-bucket"]
     environment:
-      MINIO_ROOT_USER: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:?set CODE_INTERPRETER_MINIO_ACCESS_KEY in .env}
-      MINIO_ROOT_PASSWORD: ${CODE_INTERPRETER_MINIO_SECRET_KEY:?set CODE_INTERPRETER_MINIO_SECRET_KEY in .env}
-    command: server /data --console-address ":9001"
+      GARAGE_DEFAULT_ACCESS_KEY: ${CODE_INTERPRETER_S3_ACCESS_KEY:?set CODE_INTERPRETER_S3_ACCESS_KEY in .env}
+      GARAGE_DEFAULT_SECRET_KEY: ${CODE_INTERPRETER_S3_SECRET_KEY:?set CODE_INTERPRETER_S3_SECRET_KEY in .env}
+      GARAGE_DEFAULT_BUCKET: ${CODE_INTERPRETER_S3_BUCKET:-code-interpreter-files}
     volumes:
-      - code_interpreter_minio_data:/data
+      - code_interpreter_garage_data:/var/lib/garage
+      - type: volume
+        source: stack_secrets
+        target: /run/secrets
+        read_only: true
+        volume:
+          subpath: code-interpreter-garage
     tmpfs:
-      - "/tmp:size=256m"
-      - "/run:size=64m"
-      - "/root/.minio:rw,size=32m"
+      - "/tmp:size=64m"
+      - "/run:size=16m"
     networks:
       - code_interpreter
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "/garage", "-c", "/run/secrets/garage_toml", "status"]
       interval: 10s
       timeout: 5s
-      retries: 20
-      start_period: 180s
-    logging: *json_logging
-
-  code-interpreter-minio-init:
-    image: minio/mc:RELEASE.2025-08-13T08-35-41Z@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
-    container_name: code-interpreter-minio-init
-    depends_on:
-      code-interpreter-minio:
-        condition: service_healthy
-    restart: "no"
-    # -e so a failed alias/bucket step fails the container and the
-    # service_completed_successfully gate on code-interpreter-api holds.
-    entrypoint:
-      - /bin/sh
-      - -ec
-      - |
-        mc alias set local http://code-interpreter-minio:9000 "$${CODE_INTERPRETER_MINIO_ACCESS_KEY}" "$${CODE_INTERPRETER_MINIO_SECRET_KEY}"
-        mc mb --ignore-existing "local/$${CODE_INTERPRETER_MINIO_BUCKET}"
-    environment:
-      CODE_INTERPRETER_MINIO_ACCESS_KEY: ${CODE_INTERPRETER_MINIO_ACCESS_KEY:?set CODE_INTERPRETER_MINIO_ACCESS_KEY in .env}
-      CODE_INTERPRETER_MINIO_SECRET_KEY: ${CODE_INTERPRETER_MINIO_SECRET_KEY:?set CODE_INTERPRETER_MINIO_SECRET_KEY in .env}
-      CODE_INTERPRETER_MINIO_BUCKET: ${CODE_INTERPRETER_MINIO_BUCKET:-code-interpreter-files}
-    networks:
-      - code_interpreter
+      retries: 12
+      start_period: 30s
     logging: *json_logging

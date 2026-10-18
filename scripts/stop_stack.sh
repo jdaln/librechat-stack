@@ -13,7 +13,7 @@
 #   * lbc_api_uploads       files uploaded through the LibreChat UI
 #   * lbc_api_images        generated images
 #   * lbc_app_data          app state
-#   * code_interpreter_*    sandbox / minio / redis state for executed code
+#   * code_interpreter_*    sandbox / garage / redis state for executed code
 #   * firecrawl_postgres_data, firecrawl_redis_data, searxng_*
 #   * jina_reranker_model_cache (no re-download on next start)
 #   * stack_secrets         runtime secrets (re-populated from .env on start)

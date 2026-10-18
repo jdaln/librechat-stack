@@ -37,8 +37,7 @@ stack_container_names=(
   chat-meilisearch
   chat-mongodb
   code-interpreter-api
-  code-interpreter-minio
-  code-interpreter-minio-init
+  code-interpreter-garage
   code-interpreter-proxy
   code-interpreter-redis
   egress-proxy
@@ -645,14 +644,8 @@ wait_container_healthy code-interpreter-redis 120
 compose \
   --env-file .env \
   "${compose_files[@]}" \
-  up -d code-interpreter-minio
-wait_container_healthy code-interpreter-minio 120
-
-compose \
-  --env-file .env \
-  "${compose_files[@]}" \
-  up -d code-interpreter-minio-init
-wait_container_success code-interpreter-minio-init 120
+  up -d code-interpreter-garage
+wait_container_healthy code-interpreter-garage 120
 
 compose \
   --env-file .env \
@@ -817,8 +810,8 @@ if grep -q 'SEARXNG_API_KEY=' <<<"${api_env}"; then
 fi
 
 code_env="$(docker inspect code-interpreter-api --format '{{json .Config.Env}}')"
-if grep -q 'MINIO_ACCESS_KEY=minioadmin' <<<"${code_env}" || grep -q 'MINIO_SECRET_KEY=minioadmin' <<<"${code_env}"; then
-  echo "Code interpreter is using insecure default MinIO credentials" >&2
+if grep -q 'S3_ACCESS_KEY=test-access-key' <<<"${code_env}" || grep -q 'S3_SECRET_KEY=test-secret-key' <<<"${code_env}" || grep -qi 'minioadmin' <<<"${code_env}"; then
+  echo "Code interpreter is using insecure default object-store credentials" >&2
   exit 1
 fi
 
@@ -866,7 +859,7 @@ log "Checking seccomp/apparmor posture"
 for container in \
   LibreChat api-proxy egress-proxy sandpack-bundler rag_api chat-mongodb chat-meilisearch vectordb \
   searxng searxng-auth-proxy searxng-valkey firecrawl-api firecrawl-playwright firecrawl-redis firecrawl-rabbitmq firecrawl-postgres \
-  jina-reranker code-interpreter-api code-interpreter-proxy code-interpreter-redis code-interpreter-minio \
+  jina-reranker code-interpreter-api code-interpreter-proxy code-interpreter-redis code-interpreter-garage \
   sandpack-static caddy-static-proxy; do
   secopts="$(docker inspect "${container}" --format '{{json .HostConfig.SecurityOpt}}')"
   if grep -q 'seccomp=unconfined' <<<"${secopts}"; then

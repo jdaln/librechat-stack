@@ -1,0 +1,21 @@
+# Garage (S3-compatible object store) for LibreCodeInterpreter — single node.
+# Copied into the stack_secrets volume by scripts/populate_stack_secrets_volume.sh
+# and read as /run/secrets/garage_toml. Key and bucket come from the
+# GARAGE_DEFAULT_* environment (compose overlay, `--default-bucket`).
+metadata_dir = "/var/lib/garage/meta"
+data_dir = "/var/lib/garage/data"
+db_engine = "sqlite"
+replication_factor = 1
+
+rpc_bind_addr = "[::]:3901"
+# Single node on an internal network with no published RPC port: no peer ever
+# authenticates with this, so a fixed value is acceptable.
+rpc_secret = "0000000000000000000000000000000000000000000000000000000000000000"
+
+[s3_api]
+# Clients must sign for this region (LibreCodeInterpreter: S3_REGION, default "garage").
+s3_region = "garage"
+api_bind_addr = "[::]:3900"
+
+[admin]
+api_bind_addr = "[::]:3903"

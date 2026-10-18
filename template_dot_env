@@ -200,12 +200,12 @@ CODE_INTERPRETER_GIT_URL=https://github.com/usnavy13/LibreCodeInterpreter.git
 CODE_INTERPRETER_GIT_REF=170194fa8e2f5bfb396b76e35d12ce88597a7c47  # dev
 CODE_INTERPRETER_IMAGE=librecodeinterpreter:170194f
 
-# Internal object store credentials used by LibreCodeInterpreter.
-# LibreCodeInterpreter consumes S3_* settings; the compose overlay maps the
-# values below to the bundled MinIO service by default.
-CODE_INTERPRETER_MINIO_ACCESS_KEY=24389_CHANGE_ME
-CODE_INTERPRETER_MINIO_SECRET_KEY=24389_CHANGE_ME
-CODE_INTERPRETER_MINIO_BUCKET=code-interpreter-files
+# Internal object store credentials used by LibreCodeInterpreter (S3_* settings),
+# served by the bundled Garage service. Garage requires the access key id to be
+# "GK" + 32 hex characters:  GK$(openssl rand -hex 16)
+CODE_INTERPRETER_S3_ACCESS_KEY=24389_CHANGE_ME
+CODE_INTERPRETER_S3_SECRET_KEY=24389_CHANGE_ME
+CODE_INTERPRETER_S3_BUCKET=code-interpreter-files
 CODE_INTERPRETER_LOG_LEVEL=WARNING
 CODE_INTERPRETER_REPL_ENABLED=false
 CODE_INTERPRETER_SANDBOX_POOL_ENABLED=false

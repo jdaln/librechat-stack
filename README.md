@@ -162,7 +162,7 @@ In the UI, create an Agent and enable the **Code Interpreter** tool. LibreChat r
 
 Before enabling:
 
-- Set strong MinIO credentials in `.env` — the template values are placeholders.
+- Set strong object-store credentials in `.env` (`CODE_INTERPRETER_S3_*`; the access key id must be `GK` + 32 hex) — the template values are placeholders.
 - The container needs `SYS_ADMIN` for nsjail (see Known limitations).
 - `librechat.yaml` must list `execute_code` in `endpoints.agents.capabilities` (it does by default).
 

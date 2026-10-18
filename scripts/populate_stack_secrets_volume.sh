@@ -66,7 +66,7 @@ validate_env_secrets() {
   done
 
   if [[ "${ENABLE_CODE_INTERPRETER:-0}" == "1" ]]; then
-    for key in LIBRECHAT_CODE_API_KEY CODE_INTERPRETER_MINIO_ACCESS_KEY CODE_INTERPRETER_MINIO_SECRET_KEY; do
+    for key in LIBRECHAT_CODE_API_KEY CODE_INTERPRETER_S3_ACCESS_KEY CODE_INTERPRETER_S3_SECRET_KEY; do
       require_env_secret "${key}"
     done
   fi
@@ -148,7 +148,7 @@ main() {
     mkdir -p /run/secrets/egress-proxy /run/secrets/api-proxy /run/secrets/api \
              /run/secrets/mongodb /run/secrets/mongo-init /run/secrets/rag-api \
              /run/secrets/searxng-auth /run/secrets/static-preview \
-             /run/secrets/code-interpreter-proxy \
+             /run/secrets/code-interpreter-proxy /run/secrets/code-interpreter-garage \
              /run/secrets/ollama-proxy
   '
 
@@ -160,6 +160,7 @@ main() {
   copy_required "${PROJECT_ROOT}/optional/local-search/searxng/auth-proxy.Caddyfile" searxng-auth/searxng_auth_caddyfile
   copy_required "${PROJECT_ROOT}/optional/static-preview/Caddyfile" static-preview/static_preview_caddyfile
   copy_required "${PROJECT_ROOT}/optional/code-interpreter/Caddyfile" code-interpreter-proxy/code_interpreter_proxy_caddyfile
+  copy_required "${PROJECT_ROOT}/optional/code-interpreter/garage.toml" code-interpreter-garage/garage_toml
   copy_required "${PROJECT_ROOT}/optional/ollama/Caddyfile" ollama-proxy/ollama_proxy_caddyfile
   copy_required "${SECRETS_DIR}/runtime-mongo-root-user.txt" mongodb/mongo_root_user
   copy_required "${SECRETS_DIR}/runtime-mongo-root-password.txt" mongodb/mongo_root_password

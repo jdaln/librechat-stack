@@ -22,7 +22,7 @@ truth: `optional/egress-proxy/squid.conf` +
 | `api-proxy`             | ❌          | ❌             | Isolated                                   |
 | `caddy-static-proxy`    | ❌          | ❌             | Isolated                                   |
 | `code-interpreter-api`  | ❌          | ❌             | Isolated                                   |
-| `code-interpreter-minio`| ❌          | ❌             | Isolated                                   |
+| `code-interpreter-garage`| ❌         | ❌             | Isolated                                   |
 | `code-interpreter-proxy`| ❌          | ❌             | Isolated                                   |
 | `code-interpreter-redis`| ❌          | ❌             | Isolated                                   |
 | `firecrawl-postgres`    | ❌          | ❌             | Isolated                                   |
