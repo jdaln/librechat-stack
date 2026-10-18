@@ -10,6 +10,8 @@
 
 const FIRECRAWL_API_URL = (process.env.FIRECRAWL_API_URL || 'http://firecrawl-api:3002').replace(/\/$/, '');
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
+const SEARXNG_URL = (process.env.SEARXNG_INSTANCE_URL || 'http://searxng-auth:8080').replace(/\/$/, '');
+const SEARXNG_API_KEY = process.env.SEARXNG_API_KEY || '';
 const DEFAULT_CHARS = Math.max(2000, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT ?? '16000', 10) || 16000);
 // Per-call ceiling for max_chars (~15k tokens). Keeps a single fetch from
 // flooding the context while letting the model deliberately go deep.
@@ -23,6 +25,7 @@ const TOOL = {
     '(repository pages, listings, documentation, articles, social media posts and profiles). One call per page. ' +
     'Links to X/Twitter, Bluesky, Instagram and TikTok, and pages that answer with a login or JavaScript wall, are read ' +
     'through alternative front-ends or archive snapshots automatically; the result states which source answered. ' +
+    'To find posts by keyword rather than by link, use social_search. ' +
     'If the result says it was truncated, call again with `start` set to the indicated ' +
     'offset to continue reading, or with a larger `max_chars`.',
   inputSchema: {
@@ -41,6 +44,93 @@ const TOOL = {
     required: ['url'],
   },
 };
+
+// Keyword search across social networks: one `site:` query per network through
+// the stack's SearXNG (DuckDuckGo indexes these sites), Social Searcher through
+// the headless browser as fallback. Networks follow the usual OSINT set.
+const SOCIAL_SITES = {
+  x: 'x.com',
+  bluesky: 'bsky.app',
+  reddit: 'reddit.com',
+  instagram: 'instagram.com',
+  tiktok: 'tiktok.com',
+  youtube: 'youtube.com',
+  linkedin: 'linkedin.com',
+  threads: 'threads.com',
+  facebook: 'facebook.com',
+  telegram: 't.me',
+  truthsocial: 'truthsocial.com',
+};
+const SOCIAL_DEFAULT = ['x', 'bluesky', 'reddit', 'instagram', 'tiktok', 'youtube'];
+
+const SOCIAL_TOOL = {
+  name: 'social_search',
+  description:
+    'Search recent public posts and profiles on social networks by keyword, name or handle. ' +
+    `Networks: ${Object.keys(SOCIAL_SITES).join(', ')} (default: ${SOCIAL_DEFAULT.join(', ')}). ` +
+    'Returns links with titles and snippets per network; open a link with open_url to read the post or profile. ' +
+    'Use this instead of web_search when the user asks what people say or post about something on social media.',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'Keywords, a name, or a handle (with or without @).' },
+      networks: {
+        type: 'array',
+        items: { type: 'string', enum: Object.keys(SOCIAL_SITES) },
+        description: 'Networks to search; omit for the default set.',
+      },
+      limit: { type: 'integer', description: 'Results per network (default 5, max 10).' },
+    },
+    required: ['query'],
+  },
+};
+
+async function searxng(query) {
+  const u = `${SEARXNG_URL}/search?q=${encodeURIComponent(query)}&format=json`;
+  const response = await fetch(u, { headers: { 'X-API-Key': SEARXNG_API_KEY }, signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`search backend HTTP ${response.status}`);
+  const data = await response.json().catch(() => ({}));
+  return Array.isArray(data.results) ? data.results : [];
+}
+
+async function socialSearch(query, networks, limit) {
+  const wanted = (Array.isArray(networks) && networks.length ? networks : SOCIAL_DEFAULT).filter((n) => SOCIAL_SITES[n]);
+  if (!wanted.length) throw new Error('no known network requested');
+  const per = Math.min(Math.max(1, limit || 5), 10);
+  const q = String(query || '').trim().replace(/^@/, '');
+  if (!q) throw new Error('query is required');
+  const sections = [];
+  let total = 0;
+  for (const n of wanted) {
+    let results = [];
+    let note = '';
+    try {
+      results = (await searxng(`site:${SOCIAL_SITES[n]} ${q}`)).slice(0, per);
+    } catch (error) {
+      note = ` (search failed: ${error.message})`;
+    }
+    total += results.length;
+    const lines = [`## ${n} (${SOCIAL_SITES[n]})${note}`];
+    if (!results.length) lines.push('no results');
+    for (const r of results) {
+      const snippet = (r.content || '').replace(/\s+/g, ' ').trim();
+      lines.push(`- [${(r.title || r.url || '').trim()}](${r.url})${r.publishedDate ? ' · ' + String(r.publishedDate).slice(0, 10) : ''}${snippet ? '\n  ' + snippet.slice(0, 240) : ''}`);
+    }
+    sections.push(lines.join('\n'));
+    // one query at a time; the search backend paces upstream engines itself
+  }
+  if (total === 0) {
+    // Fallback: Social Searcher renders its results in the browser; the headless
+    // browser executes it. Best effort, reported as such.
+    try {
+      const r = await scrape(`https://www.social-searcher.com/social-buzz/?q5=${encodeURIComponent(q)}`);
+      sections.push(`## social-searcher.com (fallback)\n${r.markdown.slice(0, 4000)}`);
+    } catch (error) {
+      sections.push(`## social-searcher.com (fallback)\nunavailable: ${error.message}`);
+    }
+  }
+  return `# Social search: ${q}\n\n${sections.join('\n\n')}`;
+}
 
 // Densify scraped markdown: replace images with their alt text (alt often
 // carries the information, e.g. star ratings), drop empty-text links (icon/
@@ -492,19 +582,22 @@ async function handle(msg) {
   } else if (method === 'ping') {
     reply(id, {});
   } else if (method === 'tools/list') {
-    reply(id, { tools: [TOOL] });
+    reply(id, { tools: [TOOL, SOCIAL_TOOL] });
   } else if (method === 'tools/call') {
-    if (params?.name !== TOOL.name) {
-      replyError(id, -32602, `Unknown tool: ${params?.name}`);
+    const name = params?.name;
+    if (name !== TOOL.name && name !== SOCIAL_TOOL.name) {
+      replyError(id, -32602, `Unknown tool: ${name}`);
       return;
     }
     try {
       const args = params?.arguments ?? {};
-      const text = await openUrl(args.url ?? '', Number(args.max_chars) || 0, Number(args.start) || 0);
+      const text = name === SOCIAL_TOOL.name
+        ? await socialSearch(args.query, args.networks, Number(args.limit) || 0)
+        : await openUrl(args.url ?? '', Number(args.max_chars) || 0, Number(args.start) || 0);
       reply(id, { content: [{ type: 'text', text }], isError: false });
     } catch (error) {
       reply(id, {
-        content: [{ type: 'text', text: `open_url failed: ${error.message}` }],
+        content: [{ type: 'text', text: `${name} failed: ${error.message}` }],
         isError: true,
       });
     }
