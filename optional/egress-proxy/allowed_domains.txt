@@ -25,3 +25,9 @@ api.search.brave.com
 # (langchain OpenAIEmbeddings default) and downloads cl100k_base.tiktoken on
 # first use; subsequent calls are cached locally. ~1.7MB one-shot.
 openaipublic.blob.core.windows.net
+
+# open_url (optional/local-search/mcp/open-url.cjs): posts and profiles on x.com are
+# read through the FxTwitter API, since x.com serves no content to a headless browser.
+api.fxtwitter.com
+# open_url: Bluesky profiles and posts via the public API (no key).
+public.api.bsky.app
