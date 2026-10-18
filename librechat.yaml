@@ -38,6 +38,18 @@ mcpServers:
       FIRECRAWL_API_URL: "${FIRECRAWL_API_URL}"
       FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
       LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT: "${LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT}"
+  # Keyword search across social networks (same script, "social" mode). Kept out
+  # of the model specs on purpose: the user enables it per conversation.
+  social:
+    type: stdio
+    command: node
+    args:
+      - /app/mcp/open-url.cjs
+      - social
+    timeout: 120000
+    env:
+      FIRECRAWL_API_URL: "${FIRECRAWL_API_URL}"
+      FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
       SEARXNG_INSTANCE_URL: "${SEARXNG_INSTANCE_URL}"
       SEARXNG_API_KEY: "${SEARXNG_API_KEY}"
 

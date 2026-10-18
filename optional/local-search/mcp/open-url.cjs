@@ -12,6 +12,10 @@ const FIRECRAWL_API_URL = (process.env.FIRECRAWL_API_URL || 'http://firecrawl-ap
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
 const SEARXNG_URL = (process.env.SEARXNG_INSTANCE_URL || 'http://searxng-auth:8080').replace(/\/$/, '');
 const SEARXNG_API_KEY = process.env.SEARXNG_API_KEY || '';
+// Two MCP servers from one file: `node open-url.cjs` serves open_url (attached to
+// the default model specs), `node open-url.cjs social` serves social_search only
+// (a separate server the user enables per conversation).
+const MODE = process.argv[2] === 'social' ? 'social' : 'browser';
 const DEFAULT_CHARS = Math.max(2000, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT ?? '16000', 10) || 16000);
 // Per-call ceiling for max_chars (~15k tokens). Keeps a single fetch from
 // flooding the context while letting the model deliberately go deep.
@@ -25,7 +29,6 @@ const TOOL = {
     '(repository pages, listings, documentation, articles, social media posts and profiles). One call per page. ' +
     'Links to X/Twitter, Bluesky, Instagram and TikTok, and pages that answer with a login or JavaScript wall, are read ' +
     'through alternative front-ends or archive snapshots automatically; the result states which source answered. ' +
-    'To find posts by keyword rather than by link, use social_search. ' +
     'If the result says it was truncated, call again with `start` set to the indicated ' +
     'offset to continue reading, or with a larger `max_chars`.',
   inputSchema: {
@@ -90,8 +93,13 @@ async function searxng(query) {
   const response = await fetch(u, { headers: { 'X-API-Key': SEARXNG_API_KEY }, signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error(`search backend HTTP ${response.status}`);
   const data = await response.json().catch(() => ({}));
-  return Array.isArray(data.results) ? data.results : [];
+  return {
+    results: Array.isArray(data.results) ? data.results : [],
+    unresponsive: Array.isArray(data.unresponsive_engines) ? data.unresponsive_engines.map((e) => (Array.isArray(e) ? e[0] : e)).filter(Boolean) : [],
+  };
 }
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function socialSearch(query, networks, limit) {
   const wanted = (Array.isArray(networks) && networks.length ? networks : SOCIAL_DEFAULT).filter((n) => SOCIAL_SITES[n]);
@@ -101,11 +109,17 @@ async function socialSearch(query, networks, limit) {
   if (!q) throw new Error('query is required');
   const sections = [];
   let total = 0;
+  let first = true;
   for (const n of wanted) {
+    // Upstream engines challenge bursts from one address: space the queries.
+    if (!first) await sleep(1500 + Math.floor(Math.random() * 1500));
+    first = false;
     let results = [];
     let note = '';
     try {
-      results = (await searxng(`site:${SOCIAL_SITES[n]} ${q}`)).slice(0, per);
+      const r = await searxng(`site:${SOCIAL_SITES[n]} ${q}`);
+      results = r.results.slice(0, per);
+      if (!results.length && r.unresponsive.length) note = ` (engines rate-limited: ${r.unresponsive.join(', ')}; retry later)`;
     } catch (error) {
       note = ` (search failed: ${error.message})`;
     }
@@ -177,6 +191,10 @@ const WALL_WEAK = /log ?in to (?:continue|see|view)|sign up to see|access denied
 const WALL_MIN_CHARS = 1500;
 function looksLikeWall(text) {
   return WALL_STRONG.test(text) || (text.length < WALL_MIN_CHARS && WALL_WEAK.test(text));
+}
+// archive.today answers an unknown URL with its search page, not an error.
+function looksLikeArchiveMiss(url, text) {
+  return /archive\.(?:ph|today)/.test(url) && /webpage capture/i.test(text) && /No results/.test(text);
 }
 
 function archiveTodayUrl(href) {
@@ -305,6 +323,9 @@ async function scrape(url) {
   const title = data.data.metadata?.title ?? new URL(url).hostname;
   if (looksLikeWall(`${title}\n${markdown}`)) {
     throw new Error('page served a bot check, login or JavaScript wall instead of content');
+  }
+  if (looksLikeArchiveMiss(url, markdown)) {
+    throw new Error('no snapshot of this page');
   }
   if (markdown.trim().length === 0) {
     throw new Error('page returned no readable content');
@@ -493,7 +514,19 @@ async function fetchInstagramEmbed(url) {
   const data = await firecrawl(url, ['rawHtml']);
   const html = data.rawHtml || data.html || '';
   const ctx = extractJsonStringValue(html, 'contextJSON');
-  if (!ctx) {
+  if (!ctx || url.includes('/p/')) {
+    // Post embeds render the caption as HTML (class "Caption"), no usable JSON.
+    const cap = html.match(/class="Caption"[^>]*>([\s\S]*?)<div class="CaptionComments/);
+    const user = html.match(/class="UsernameText"[^>]*>([^<]+)</);
+    if (cap) {
+      const strip = (h) => h.replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'").replace(/[ \t]+/g, ' ').replace(/\n\s+/g, '\n').trim();
+      let text = strip(cap[1]);
+      if (user && text.startsWith(user[1])) text = text.slice(user[1].length).trim();
+      const code = (url.match(/\/p\/([^/]+)\//) || [])[1];
+      const lines = [`**@${user ? user[1] : '?'}**`, '', text, ''];
+      if (code) lines.push(`https://www.instagram.com/p/${code}/`);
+      return { title: `Instagram post by @${user ? user[1] : '?'}`, markdown: lines.join('\n') };
+    }
     if (looksLikeWall(html.slice(0, 20000))) throw new Error('page served a bot check, login or JavaScript wall instead of content');
     throw new Error('embed data not found');
   }
@@ -575,17 +608,18 @@ async function handle(msg) {
     reply(id, {
       protocolVersion: params?.protocolVersion || '2025-03-26',
       capabilities: { tools: {} },
-      serverInfo: { name: 'browser', version: '1.1.0' },
+      serverInfo: { name: MODE, version: '1.2.0' },
     });
   } else if (method === 'notifications/initialized' || (typeof method === 'string' && method.startsWith('notifications/'))) {
     // notifications get no response
   } else if (method === 'ping') {
     reply(id, {});
   } else if (method === 'tools/list') {
-    reply(id, { tools: [TOOL, SOCIAL_TOOL] });
+    reply(id, { tools: MODE === 'social' ? [SOCIAL_TOOL] : [TOOL] });
   } else if (method === 'tools/call') {
     const name = params?.name;
-    if (name !== TOOL.name && name !== SOCIAL_TOOL.name) {
+    const served = MODE === 'social' ? SOCIAL_TOOL.name : TOOL.name;
+    if (name !== served) {
       replyError(id, -32602, `Unknown tool: ${name}`);
       return;
     }
