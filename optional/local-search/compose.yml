@@ -109,7 +109,7 @@ services:
       context: .
       dockerfile: optional/local-search/searxng/Dockerfile
       args:
-        SEARXNG_IMAGE: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:3eb2fcb2153e0b1f8e9f3457695ed3db1b1443d1dbc2b6d23121835d33fd50aa}
+        SEARXNG_IMAGE: ${SEARXNG_IMAGE:-searxng/searxng:latest@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e}
     image: librechat-stack/searxng-runtime:local
     container_name: searxng
     # The service with the broadest outbound allowance gets a write-protected
@@ -126,6 +126,9 @@ services:
     environment:
       SEARXNG_PORT: 8080
       SEARXNG_BIND_ADDRESS: 0.0.0.0
+      # Config baked into the image outside the upstream /etc/searxng VOLUME
+      # (see optional/local-search/searxng/Dockerfile).
+      SEARXNG_SETTINGS_PATH: /usr/local/searxng/etc
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080/}
       SEARXNG_LIMITER: "true"
       SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}

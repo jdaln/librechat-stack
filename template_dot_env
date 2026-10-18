@@ -226,7 +226,7 @@ SEARXNG_API_KEY=24389_CHANGE_ME
 SEARXNG_PORT=8080
 SEARXNG_BASE_URL=http://searxng:8080/
 SEARXNG_SECRET=24389_CHANGE_ME
-SEARXNG_IMAGE=searxng/searxng:latest@sha256:3547509b419cd6a67333d6d68bd1ffad8d46d3669d82e7a7bd538f7b45827432
+SEARXNG_IMAGE=searxng/searxng:latest@sha256:8bdd9aa136b2dc3b9332cf24714fa34a375b8a1949a1201ec900c24d7378596e
 SEARXNG_VALKEY_IMAGE=valkey/valkey:9.0.4-alpine@sha256:d1cc70645bbcef743615463a2fa4616e841407545e18f560aed0c49671a90147
 # Search locale sent to SearXNG. 'auto' detects the query language and picks
 # the matching engine market; 'all' (old upstream default) mixes locales and
@@ -319,7 +319,7 @@ LIBRECHAT_BRAVE_MIN_INTERVAL_MS=1100
 # success. Brave API stays the really-last resort (BRAVE_API_KEY above).
 LIBRECHAT_SEARXNG_BACKOFF_BASE_MS=10000
 LIBRECHAT_SEARXNG_BACKOFF_CAP_MS=240000
-LIBRECHAT_SEARXNG_RESERVE_ENGINES=mojeek,wikipedia
+LIBRECHAT_SEARXNG_RESERVE_ENGINES=wikipedia
 
 # The domain for the client and server. These are used for CORS and other
 # internal settings. For a local setup, the default is usually correct.

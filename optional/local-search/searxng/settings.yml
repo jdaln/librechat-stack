@@ -9,54 +9,26 @@ use_default_settings:
     # Google stays out: its scraping CAPTCHA-blocks datacenter egress IPs.
     # Startpage proxies Google results, giving similar relevance without the blocks.
     keep_only:
-      # general
+      # general — what returns usable results from this deployment (2026-10-18);
+      # DDG's request details are adjusted in patch_engines.py.
       - duckduckgo
-      - brave
-      - startpage
-      - qwant
       - wikipedia
-      # Mojeek runs its own crawler and tolerates automated queries — it keeps
-      # results flowing when the big engines CAPTCHA/429 this egress IP under
-      # load (observed 2026-09-02: DDG+Brave+Qwant+Startpage all suspended).
-      - mojeek
-      # Bing is deliberately ABSENT — even as a rate-limit reserve engine it
-      # substitutes cross-locale trending junk (Spanish/Arabic noise pages)
-      # for real results when queried from proxy/datacenter IPs. Verified
-      # again 2026-09-08 when it briefly served as the reserve tier.
+      # Not included:
+      #   startpage, mojeek — require a JavaScript-capable client now
+      #   qwant             — the API endpoint used by the engine is unavailable
+      #   brave, google     — do not serve automated clients from here
+      #   bing              — without an explicit region it picks the market from
+      #                       the egress IP (German results for French queries)
       # images
       - duckduckgo images
-      - brave.images
-      - startpage images
-      - qwant images
       - bing images
       # videos
       - duckduckgo videos
-      - brave.videos
-      - qwant videos
       - bing videos
       # news
       - duckduckgo news
-      - brave.news
-      - startpage news
-      - qwant news
       - bing news
 
-engines:
-  # Qwant is disabled in upstream defaults (occasional API rate-limiting) but
-  # is strong for French/European content; if it 429s, SearXNG auto-suspends
-  # it without affecting the other engines.
-  - name: qwant
-    disabled: false
-  - name: qwant images
-    disabled: false
-  - name: qwant videos
-    disabled: false
-  - name: qwant news
-    disabled: false
-  # Disabled in upstream defaults (result quality below the big engines), but
-  # it is the only general engine here that doesn't rate-limit automation.
-  - name: mojeek
-    disabled: false
 
 general:
   instance_name: "LibreChat Local Search"
@@ -66,6 +38,9 @@ general:
 
 search:
   safe_search: 1
+  # Fallback when query-language detection ('auto') finds nothing, so engines
+  # always get an explicit region (searxng/searxng#6779).
+  default_lang: "en-US"
   formats:
     - html
     - json
@@ -75,6 +50,9 @@ outgoing:
   # quality engines were timing out, leaving fast junk-prone responses to
   # dominate the aggregation.
   request_timeout: 6.0
+  # Contact info appended to the "SearXNG/<version>" UA that API engines
+  # (wikipedia) send, as Wikimedia's API etiquette asks.
+  useragent_suffix: "(+https://github.com/jdaln/librechat-stack)"
   proxies:
     all://:
       - http://egress-proxy:3128

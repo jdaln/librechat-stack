@@ -621,7 +621,7 @@ const createSearchAPI = (config) => {
         //      cross-locale trending noise instead of results (2026-09-08).
         //   2. Brave Search API — really-last resort, only with BRAVE_API_KEY
         const logger = utils.createDefaultLogger();
-        const RESERVE_ENGINES = (process.env.LIBRECHAT_SEARXNG_RESERVE_ENGINES ?? 'mojeek,wikipedia').trim();
+        const RESERVE_ENGINES = (process.env.LIBRECHAT_SEARXNG_RESERVE_ENGINES ?? 'wikipedia').trim();
         let brave = null;
         const isEmptyResult = (data, type) => {
             if (data == null) {

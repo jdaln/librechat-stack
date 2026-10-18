@@ -1,0 +1,9 @@
+{
+    "os": [
+        "iPad; CPU OS 18_6 like Mac OS X"
+    ],
+    "ua": "Mozilla/5.0 ({os}) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/{version} Mobile/15E148 Safari/604.1",
+    "versions": [
+        "26.0"
+    ]
+}
