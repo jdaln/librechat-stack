@@ -78,9 +78,15 @@ const X_RESERVED = new Set(['home', 'explore', 'search', 'i', 'settings', 'login
 const IG_HOSTS = new Set(['instagram.com', 'www.instagram.com']);
 const BSKY_HOSTS = new Set(['bsky.app', 'www.bsky.app', 'fxbsky.app']);
 const BSKY_API = 'https://public.api.bsky.app/xrpc';
-// Text patterns of pages that did load but hold no content for a reader.
-const WALL_PATTERNS = /just a moment|enable javascript|javascript is (?:required|disabled)|log ?in to (?:continue|see|view)|sign up to see|verify you are (?:a )?human|access denied|you have been blocked|checking your browser|something went wrong\.? try (?:again|reloading)|please wait while|attention required/i;
-const WALL_MIN_CHARS = 400;
+// Pages that did load but hold no content for a reader. Strong phrases mark a
+// wall whatever the page length (front-ends pad them with boilerplate); weak
+// ones only on short pages, where they cannot be part of an article.
+const WALL_STRONG = /verify (?:that )?you(?:'re| are) (?:not a (?:ro)?bot|(?:a )?human)|checking (?:that )?(?:that's )?you(?:'re| are)? ?(?:a )?human|just a moment|attention required|enable javascript|javascript is (?:required|disabled)|checking your browser|you have been blocked|please wait while|complete the (?:captcha|security check)|not a robot/i;
+const WALL_WEAK = /log ?in to (?:continue|see|view)|sign up to see|access denied|something went wrong\.? try (?:again|reloading)/i;
+const WALL_MIN_CHARS = 1500;
+function looksLikeWall(text) {
+  return WALL_STRONG.test(text) || (text.length < WALL_MIN_CHARS && WALL_WEAK.test(text));
+}
 
 function archiveTodayUrl(href) {
   return `https://archive.ph/newest/${href}`;
@@ -178,8 +184,8 @@ async function scrape(url) {
   }
   const markdown = cleanMarkdown(data.data.markdown ?? '');
   const title = data.data.metadata?.title ?? new URL(url).hostname;
-  if (markdown.length < WALL_MIN_CHARS && WALL_PATTERNS.test(`${title}\n${markdown}`)) {
-    throw new Error('page served a login or JavaScript wall instead of content');
+  if (looksLikeWall(`${title}\n${markdown}`)) {
+    throw new Error('page served a bot check, login or JavaScript wall instead of content');
   }
   if (markdown.trim().length === 0) {
     throw new Error('page returned no readable content');
