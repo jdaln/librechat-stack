@@ -21,7 +21,7 @@ const TOOL = {
     'Open an exact web page (http/https) and return its content as markdown. ' +
     'Use this whenever the user provides a link or you know the precise page address ' +
     '(repository pages, listings, documentation, articles, social media posts and profiles). One call per page. ' +
-    'Links to X/Twitter, Bluesky and Instagram, and pages that answer with a login or JavaScript wall, are read ' +
+    'Links to X/Twitter, Bluesky, Instagram and TikTok, and pages that answer with a login or JavaScript wall, are read ' +
     'through alternative front-ends or archive snapshots automatically; the result states which source answered. ' +
     'If the result says it was truncated, call again with `start` set to the indicated ' +
     'offset to continue reading, or with a larger `max_chars`.',
@@ -77,6 +77,7 @@ const X_HOSTS = new Set(['x.com', 'www.x.com', 'twitter.com', 'www.twitter.com',
 const X_RESERVED = new Set(['home', 'explore', 'search', 'i', 'settings', 'login', 'signup', 'notifications', 'messages', 'compose', 'hashtag', 'intent', 'share']);
 const IG_HOSTS = new Set(['instagram.com', 'www.instagram.com']);
 const BSKY_HOSTS = new Set(['bsky.app', 'www.bsky.app', 'fxbsky.app']);
+const TIKTOK_HOSTS = new Set(['tiktok.com', 'www.tiktok.com', 'm.tiktok.com']);
 const BSKY_API = 'https://public.api.bsky.app/xrpc';
 // Pages that did load but hold no content for a reader. Strong phrases mark a
 // wall whatever the page length (front-ends pad them with boilerplate); weak
@@ -138,12 +139,19 @@ function planAttempts(parsed) {
   }
 
   if (IG_HOSTS.has(host)) {
-    const isPost = ['p', 'reel', 'reels', 'tv'].includes((segs[0] || '').toLowerCase());
-    if (!isPost && segs.length === 1 && segs[0] && !['explore', 'accounts', 'directory'].includes(segs[0].toLowerCase())) {
+    const isPost = ['p', 'reel', 'reels', 'tv'].includes((segs[0] || '').toLowerCase()) && segs[1];
+    if (isPost) {
+      return [
+        { label: 'instagram.com embed page', kind: 'ig-embed', url: `https://www.instagram.com/p/${encodeURIComponent(segs[1])}/embed/captioned/` },
+        { label: 'original page', kind: 'scrape', url: original },
+        { label: 'archive.today snapshot', kind: 'scrape', url: archiveTodayUrl(original) },
+      ];
+    }
+    if (segs.length === 1 && segs[0] && !['explore', 'accounts', 'directory'].includes(segs[0].toLowerCase())) {
       const user = segs[0].replace(/^@/, '');
       return [
+        { label: 'instagram.com embed page', kind: 'ig-embed', url: `https://www.instagram.com/${encodeURIComponent(user)}/embed/` },
         { label: 'dumpor.io (alternative front-end for instagram.com)', kind: 'scrape', url: `https://dumpor.io/v/${encodeURIComponent(user)}` },
-        { label: 'tikvib.com (Picuki, alternative front-end for instagram.com)', kind: 'scrape', url: `https://www.tikvib.com/profile/${encodeURIComponent(user)}` },
         { label: 'archive.today snapshot', kind: 'scrape', url: archiveTodayUrl(original) },
       ];
     }
@@ -153,6 +161,22 @@ function planAttempts(parsed) {
     ];
   }
 
+  if (TIKTOK_HOSTS.has(host) && segs[0] && segs[0].startsWith('@')) {
+    const user = segs[0].slice(1);
+    if (segs[1] === 'video' && /^\d+$/.test(segs[2] || '')) {
+      return [
+        { label: 'tikvib.com (alternative front-end for tiktok.com)', kind: 'scrape', url: `https://www.tikvib.com/media/${segs[2]}` },
+        { label: 'original page', kind: 'scrape', url: original },
+      ];
+    }
+    if (segs.length === 1) {
+      return [
+        { label: 'tikvib.com (alternative front-end for tiktok.com)', kind: 'scrape', url: `https://www.tikvib.com/profile/${encodeURIComponent(user)}` },
+        { label: 'original page', kind: 'scrape', url: original },
+      ];
+    }
+  }
+
   return [
     { label: 'original page', kind: 'scrape', url: original },
     { label: 'archive.today snapshot', kind: 'scrape', url: archiveTodayUrl(original) },
@@ -160,7 +184,7 @@ function planAttempts(parsed) {
   ];
 }
 
-async function scrape(url) {
+async function firecrawl(url, formats) {
   const response = await fetch(`${FIRECRAWL_API_URL}/v2/scrape`, {
     method: 'POST',
     headers: {
@@ -169,8 +193,8 @@ async function scrape(url) {
     },
     body: JSON.stringify({
       url,
-      formats: ['markdown'],
-      onlyMainContent: true,
+      formats,
+      onlyMainContent: formats.includes('markdown'),
       blockAds: true,
       removeBase64Images: true,
       timeout: 30000,
@@ -182,6 +206,11 @@ async function scrape(url) {
     // Hostname only — full URLs stay out of anything that may be logged.
     throw new Error(`HTTP ${response.status}${data.error ? ': ' + String(data.error).slice(0, 120) : ''}`);
   }
+  return data.data;
+}
+
+async function scrape(url) {
+  const data = { data: await firecrawl(url, ['markdown']) };
   const markdown = cleanMarkdown(data.data.markdown ?? '');
   const title = data.data.metadata?.title ?? new URL(url).hostname;
   if (looksLikeWall(`${title}\n${markdown}`)) {
@@ -314,6 +343,96 @@ async function fetchBskyProfile(handle) {
   return { title: `${u.displayName || ''} (@${u.handle || handle}) on Bluesky`, markdown: lines.join('\n') };
 }
 
+// Instagram embed pages (/<user>/embed/, /p/<code>/embed/captioned/) are
+// served without login and carry their data as an escaped JSON string in a
+// "contextJSON" attribute. Fetched as raw HTML through Firecrawl (so the
+// egress policy still applies), parsed here.
+function extractJsonStringValue(text, key) {
+  const marker = `"${key}":"`;
+  const i = text.indexOf(marker);
+  if (i < 0) return null;
+  let j = i + marker.length;
+  let out = '';
+  while (j < text.length) {
+    const c = text[j];
+    if (c === '\\') {
+      out += c + (text[j + 1] ?? '');
+      j += 2;
+      continue;
+    }
+    if (c === '"') break;
+    out += c;
+    j += 1;
+  }
+  try {
+    return JSON.parse(JSON.parse(`"${out}"`));
+  } catch {
+    return null;
+  }
+}
+
+function* walk(o) {
+  if (Array.isArray(o)) {
+    for (const x of o) yield* walk(x);
+  } else if (o && typeof o === 'object') {
+    yield o;
+    for (const v of Object.values(o)) yield* walk(v);
+  }
+}
+
+function igCaption(node) {
+  return node?.edge_media_to_caption?.edges?.[0]?.node?.text || '';
+}
+
+function igPostToMarkdown(node, owner) {
+  const user = node.owner?.username || owner?.username || '?';
+  const when = node.taken_at_timestamp ? new Date(node.taken_at_timestamp * 1000).toISOString().slice(0, 10) : '';
+  const lines = [`**@${user}**${when ? ' · ' + when : ''}${node.is_video ? ' · video' : ''}`, '', igCaption(node)];
+  const stats = [
+    node.edge_liked_by?.count != null ? `${fmtCount(node.edge_liked_by.count)} likes` : (node.edge_media_preview_like?.count != null ? `${fmtCount(node.edge_media_preview_like.count)} likes` : ''),
+    node.edge_media_to_comment?.count != null ? `${fmtCount(node.edge_media_to_comment.count)} comments` : '',
+    node.video_view_count != null ? `${fmtCount(node.video_view_count)} views` : '',
+  ].filter(Boolean);
+  if (stats.length) lines.push('', stats.join(' · '));
+  if (node.location?.name) lines.push('', `location: ${node.location.name}`);
+  if (node.shortcode) lines.push('', `https://www.instagram.com/p/${node.shortcode}/`);
+  return lines.join('\n');
+}
+
+async function fetchInstagramEmbed(url) {
+  const data = await firecrawl(url, ['rawHtml']);
+  const html = data.rawHtml || data.html || '';
+  const ctx = extractJsonStringValue(html, 'contextJSON');
+  if (!ctx) {
+    if (looksLikeWall(html.slice(0, 20000))) throw new Error('page served a bot check, login or JavaScript wall instead of content');
+    throw new Error('embed data not found');
+  }
+  const objects = [...walk(ctx)];
+  const owner = objects.find((o) => o.username && o.edge_followed_by) || objects.find((o) => o.username) || null;
+  const single = objects.find((o) => o.shortcode && o.edge_media_to_caption && o.__typename && !objects.some((p) => p.edges && p.edges.some((e) => e.node === o)));
+  const timeline = objects.find((o) => o.edge_owner_to_timeline_media?.edges)?.edge_owner_to_timeline_media?.edges?.map((e) => e.node) || [];
+  if (url.includes('/p/')) {
+    const node = single || timeline[0];
+    if (!node) throw new Error('post not found in embed data');
+    return { title: `Instagram post by @${node.owner?.username || owner?.username || '?'}`, markdown: igPostToMarkdown(node, owner) };
+  }
+  if (!owner) throw new Error('profile not found in embed data');
+  const lines = [`**@${owner.username}**${owner.full_name ? ' · ' + owner.full_name : ''}${owner.is_verified ? ' · verified' : ''}`, ''];
+  if (owner.biography) lines.push(owner.biography, '');
+  lines.push([
+    owner.edge_followed_by?.count != null ? `${fmtCount(owner.edge_followed_by.count)} followers` : '',
+    owner.edge_owner_to_timeline_media?.count != null ? `${fmtCount(owner.edge_owner_to_timeline_media.count)} posts` : '',
+    owner.is_private ? 'private account' : '',
+  ].filter(Boolean).join(' · '));
+  const posts = timeline.length ? timeline : objects.filter((o) => o.shortcode && o.edge_media_to_caption);
+  if (posts.length) {
+    lines.push('', `## Latest posts (${posts.length})`);
+    for (const n of posts) lines.push('', '---', '', igPostToMarkdown(n, owner));
+  }
+  lines.push('', `https://www.instagram.com/${owner.username}/`);
+  return { title: `@${owner.username} on Instagram`, markdown: lines.join('\n') };
+}
+
 async function openUrl(rawUrl, maxChars, start) {
   let parsed;
   try {
@@ -333,6 +452,7 @@ async function openUrl(rawUrl, maxChars, start) {
       const result = attempt.kind === 'fx' ? await fetchFx(attempt.url)
         : attempt.kind === 'bsky-post' ? await fetchBskyPost(attempt.url)
         : attempt.kind === 'bsky-profile' ? await fetchBskyProfile(attempt.url)
+        : attempt.kind === 'ig-embed' ? await fetchInstagramEmbed(attempt.url)
         : await scrape(attempt.url);
       got = { ...result, attempt };
       break;
