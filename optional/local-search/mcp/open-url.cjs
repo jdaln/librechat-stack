@@ -15,7 +15,7 @@ const SEARXNG_API_KEY = process.env.SEARXNG_API_KEY || '';
 // Two MCP servers from one file: `node open-url.cjs` serves open_url (attached to
 // the default model specs), `node open-url.cjs social` serves social_search only
 // (a separate server the user enables per conversation).
-const MODE = process.argv[2] === 'social' ? 'social' : 'browser';
+const MODE = process.argv.slice(1).includes('social') ? 'social' : 'browser';
 const DEFAULT_CHARS = Math.max(2000, Number.parseInt(process.env.LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT ?? '16000', 10) || 16000);
 // Per-call ceiling for max_chars (~15k tokens). Keeps a single fetch from
 // flooding the context while letting the model deliberately go deep.
