@@ -72,7 +72,9 @@ const SOCIAL_TOOL = {
     'Search recent public posts and profiles on social networks by keyword, name or handle. ' +
     `Networks: ${Object.keys(SOCIAL_SITES).join(', ')} (default: ${SOCIAL_DEFAULT.join(', ')}). ` +
     'Returns links with titles and snippets per network (engine ranking decides how many each network gets); open a link with open_url to read the post or profile. ' +
-    'Use this instead of web_search when the user asks what people say or post about something on social media.',
+    'Use this instead of web_search when the user asks what people say or post about something on social media. ' +
+    'One call covers all requested networks. A network marked "rate-limited" stays unavailable for several minutes: ' +
+    'do not rephrase and retry it in the same answer, report it as unavailable.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -100,6 +102,11 @@ async function searxng(query) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+// After an engine refusal, further searches for a while would only extend the
+// suspension; answer from that state instead. The server process is long-lived.
+let engineCooldownUntil = 0;
+let lastUnresponsive = [];
+const ENGINE_COOLDOWN_MS = 90000;
 
 function hostToNetwork(url, wanted) {
   let host = '';
@@ -135,7 +142,10 @@ async function socialSearch(query, networks, limit) {
     }
   };
   let failure = '';
-  try {
+  if (Date.now() < engineCooldownUntil) {
+    lastUnresponsive.forEach((e) => unresponsive.add(e));
+    failure = ` (engines rate-limited: ${lastUnresponsive.join(', ')}; not queried again for ${Math.ceil((engineCooldownUntil - Date.now()) / 1000)} s)`;
+  } else try {
     await run(wanted);
     const missing = wanted.filter((n) => !grouped[n].length);
     if (missing.length && missing.length < wanted.length) {
@@ -144,6 +154,10 @@ async function socialSearch(query, networks, limit) {
     }
   } catch (error) {
     failure = ` (search failed: ${error.message})`;
+  }
+  if (unresponsive.size && !failure) {
+    engineCooldownUntil = Date.now() + ENGINE_COOLDOWN_MS;
+    lastUnresponsive = [...unresponsive];
   }
 
   const sections = [];
