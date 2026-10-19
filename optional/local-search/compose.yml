@@ -129,6 +129,9 @@ services:
       # Config baked into the image outside the upstream /etc/searxng VOLUME
       # (see optional/local-search/searxng/Dockerfile).
       SEARXNG_SETTINGS_PATH: /usr/local/searxng/etc
+      # Country of the egress address (ISO code, lowercase): Bing only serves sane
+      # results when the market's country matches it. Empty = derive from language.
+      SEARXNG_BING_COUNTRY: ${SEARXNG_BING_COUNTRY:-}
       SEARXNG_BASE_URL: ${SEARXNG_BASE_URL:-http://searxng:8080/}
       SEARXNG_LIMITER: "true"
       SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env}

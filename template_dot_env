@@ -232,6 +232,9 @@ SEARXNG_VALKEY_IMAGE=valkey/valkey:9.0.4-alpine@sha256:d1cc70645bbcef743615463a2
 # the matching engine market; 'all' (old upstream default) mixes locales and
 # lets junk results through. Can be pinned (e.g. 'fr', 'de-CH').
 #SEARXNG_LANGUAGE=auto
+# Country of the egress address (ISO code, e.g. ch, fr, us). Bing answers with
+# decoy pages when the market's country does not match the address it sees.
+SEARXNG_BING_COUNTRY=
 # Optional comma-separated engine pin sent with every query (bypasses the
 # curated set in optional/local-search/searxng/settings.yml). Leave unset.
 #SEARXNG_ENGINES=

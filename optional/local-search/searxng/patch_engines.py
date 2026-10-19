@@ -73,9 +73,11 @@ def _region_for_locale(locale: str) -> str:
 )
 print("patched engines/duckduckgo.py: region helper")
 
-# Bing: same idea. Without a resolvable region it sends no market at all and
-# Bing picks one from the egress IP (German results for a French query from a
-# Swiss address). Derive the market from the detected language instead.
+# Bing: the market's country has to match the egress address, or Bing answers
+# with decoy pages (en-US from a Swiss address: Google-support and Stack
+# Exchange noise for any query). SEARXNG_BING_COUNTRY (the egress country, from
+# .env) combined with the detected language gives the market; without it, the
+# market is derived from the language alone.
 patch(
     "engines/bing.py",
     '    engine_region = traits.get_region(params["searxng_locale"], traits.all_locale)\n',
@@ -90,14 +92,20 @@ bing.write_text(
     + '''
 
 def _region_for_locale(locale: str) -> str:
-    """Bing market ("<language>-<country>") for a locale; derived from the language when the locale has no region."""
+    """Bing market ("<language>-<country>"): the query language with the egress country (SEARXNG_BING_COUNTRY) when set, else derived from the locale."""
+    import os
+    lang = (locale or "").replace("_", "-").split("-")[0].lower()
+    if lang in ("", "all", "auto"):
+        lang = "en"
+    markets = set(traits.regions.values())
+    country = os.environ.get("SEARXNG_BING_COUNTRY", "").strip().lower()
+    if country:
+        for candidate in (f"{lang}-{country}", f"en-{country}"):
+            if candidate in markets:
+                return candidate
     region = traits.get_region(locale, None)
     if region and region != "clear":
         return region
-    lang = (locale or "").replace("_", "-").split("-")[0].lower()
-    if lang in ("", "all", "auto"):
-        return "en-us"
-    markets = set(traits.regions.values())
     for candidate in (f"{lang}-{lang}", f"{lang}-us", f"{lang}-gb"):
         if candidate in markets:
             return candidate
