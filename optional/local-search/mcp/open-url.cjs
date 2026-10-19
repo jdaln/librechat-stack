@@ -8,6 +8,19 @@
 // web_search tool, but they do call a distinctly-named fetch tool. Attached
 // to agents via librechat.yaml's mcpServers.
 
+// Outbound HTTP(S) goes through the stack's egress proxy. LibreChat starts MCP
+// children with the env from librechat.yaml only (no NODE_OPTIONS preload), so
+// the proxy agent is set up here from HTTPS_PROXY/HTTP_PROXY/NO_PROXY. Silent:
+// stdout is the MCP channel.
+try {
+  if (process.env.HTTPS_PROXY || process.env.HTTP_PROXY || process.env.https_proxy || process.env.http_proxy) {
+    const { EnvHttpProxyAgent, setGlobalDispatcher } = require('undici');
+    setGlobalDispatcher(new EnvHttpProxyAgent());
+  }
+} catch (error) {
+  process.stderr.write(`[open-url] proxy setup failed: ${error.message}\n`);
+}
+
 const FIRECRAWL_API_URL = (process.env.FIRECRAWL_API_URL || 'http://firecrawl-api:3002').replace(/\/$/, '');
 const FIRECRAWL_API_KEY = process.env.FIRECRAWL_API_KEY || '';
 const SEARXNG_URL = (process.env.SEARXNG_INSTANCE_URL || 'http://searxng-auth:8080').replace(/\/$/, '');

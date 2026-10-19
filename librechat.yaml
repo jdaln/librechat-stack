@@ -38,6 +38,10 @@ mcpServers:
       FIRECRAWL_API_URL: "${FIRECRAWL_API_URL}"
       FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
       LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT: "${LIBRECHAT_WEB_SEARCH_FETCH_CHAR_LIMIT}"
+      # Egress proxy for the direct API calls (X, Bluesky); internal hosts stay direct via NO_PROXY.
+      HTTPS_PROXY: "${HTTPS_PROXY}"
+      HTTP_PROXY: "${HTTP_PROXY}"
+      NO_PROXY: "${NO_PROXY}"
   # Keyword search across social networks (same script, "social" mode). Kept out
   # of the model specs on purpose: the user enables it per conversation.
   social:
@@ -52,6 +56,9 @@ mcpServers:
       FIRECRAWL_API_KEY: "${FIRECRAWL_API_KEY}"
       SEARXNG_INSTANCE_URL: "${SEARXNG_INSTANCE_URL}"
       SEARXNG_API_KEY: "${SEARXNG_API_KEY}"
+      HTTPS_PROXY: "${HTTPS_PROXY}"
+      HTTP_PROXY: "${HTTP_PROXY}"
+      NO_PROXY: "${NO_PROXY}"
 
 webSearch:
   searchProvider: searxng
