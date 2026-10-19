@@ -165,7 +165,7 @@ async function socialSearch(query, networks, limit) {
   for (const n of wanted) {
     const results = grouped[n];
     let note = failure;
-    if (!results.length && !failure && unresponsive.size) note = ` (engine rate-limited: ${[...unresponsive].join(', ')}; retry in a minute)`;
+    if (!results.length && !failure && unresponsive.size) note = ` (engine rate-limited: ${[...unresponsive].join(', ')}; retry shortly)`;
     const lines = [`## ${n} (${SOCIAL_SITES[n]})${note}`];
     if (!results.length) lines.push('no results');
     for (const r of results) {

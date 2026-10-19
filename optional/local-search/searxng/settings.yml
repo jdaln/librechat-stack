@@ -38,13 +38,14 @@ general:
 
 search:
   safe_search: 1
-  # How long an engine stays suspended after an upstream refusal. Upstream
-  # defaults are a day for a CAPTCHA; the search patch already paces requests,
-  # so a short pause is enough here.
+  # How long an engine is skipped after an upstream refusal. Upstream defaults
+  # are a day for a CAPTCHA. Refusals from a residential address clear within
+  # seconds, and the search patch paces requests itself: keep the pause short so
+  # the next query gets the engine back.
   suspended_times:
-    SearxEngineCaptcha: 120
-    SearxEngineTooManyRequests: 60
-    SearxEngineAccessDenied: 300
+    SearxEngineCaptcha: 30
+    SearxEngineTooManyRequests: 15
+    SearxEngineAccessDenied: 60
   # Fallback when query-language detection ('auto') finds nothing, so engines
   # always get an explicit region (searxng/searxng#6779).
   default_lang: "en-US"
