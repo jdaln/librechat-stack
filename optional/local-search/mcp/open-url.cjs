@@ -71,7 +71,7 @@ const SOCIAL_TOOL = {
   description:
     'Search recent public posts and profiles on social networks by keyword, name or handle. ' +
     `Networks: ${Object.keys(SOCIAL_SITES).join(', ')} (default: ${SOCIAL_DEFAULT.join(', ')}). ` +
-    'Returns links with titles and snippets per network; open a link with open_url to read the post or profile. ' +
+    'Returns links with titles and snippets per network (engine ranking decides how many each network gets); open a link with open_url to read the post or profile. ' +
     'Use this instead of web_search when the user asks what people say or post about something on social media.',
   inputSchema: {
     type: 'object',
@@ -101,29 +101,56 @@ async function searxng(query) {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+function hostToNetwork(url, wanted) {
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/^(www|m|mobile|old)\./, '');
+  } catch {
+    return null;
+  }
+  return wanted.find((n) => host === SOCIAL_SITES[n] || host.endsWith('.' + SOCIAL_SITES[n])) || null;
+}
+
 async function socialSearch(query, networks, limit) {
   const wanted = (Array.isArray(networks) && networks.length ? networks : SOCIAL_DEFAULT).filter((n) => SOCIAL_SITES[n]);
   if (!wanted.length) throw new Error('no known network requested');
   const per = Math.min(Math.max(1, limit || 5), 10);
   const q = String(query || '').trim().replace(/^@/, '');
   if (!q) throw new Error('query is required');
-  const sections = [];
-  let total = 0;
-  let first = true;
-  for (const n of wanted) {
-    // Upstream engines challenge bursts from one address: space the queries.
-    if (!first) await sleep(1500 + Math.floor(Math.random() * 1500));
-    first = false;
-    let results = [];
-    let note = '';
-    try {
-      const r = await searxng(`site:${SOCIAL_SITES[n]} ${q}`);
-      results = r.results.slice(0, per);
-      if (!results.length && r.unresponsive.length) note = ` (engines rate-limited: ${r.unresponsive.join(', ')}; retry later)`;
-    } catch (error) {
-      note = ` (search failed: ${error.message})`;
+
+  // One query for all networks (the engines accept `site:a OR site:b`), then
+  // at most one follow-up for the networks the first page missed. Two paced
+  // requests instead of one per network: bursts get the engines suspended.
+  const grouped = Object.fromEntries(wanted.map((n) => [n, []]));
+  const seen = new Set();
+  const unresponsive = new Set();
+  const run = async (nets) => {
+    const r = await searxng(`${q} (${nets.map((n) => 'site:' + SOCIAL_SITES[n]).join(' OR ')})`);
+    r.unresponsive.forEach((e) => unresponsive.add(e));
+    for (const res of r.results) {
+      const n = hostToNetwork(res.url, wanted);
+      if (!n || seen.has(res.url) || grouped[n].length >= per) continue;
+      seen.add(res.url);
+      grouped[n].push(res);
     }
-    total += results.length;
+  };
+  let failure = '';
+  try {
+    await run(wanted);
+    const missing = wanted.filter((n) => !grouped[n].length);
+    if (missing.length && missing.length < wanted.length) {
+      await sleep(2000 + Math.floor(Math.random() * 1500));
+      await run(missing);
+    }
+  } catch (error) {
+    failure = ` (search failed: ${error.message})`;
+  }
+
+  const sections = [];
+  for (const n of wanted) {
+    const results = grouped[n];
+    let note = failure;
+    if (!results.length && !failure && unresponsive.size) note = ` (engines rate-limited: ${[...unresponsive].join(', ')}; retry in a few minutes)`;
     const lines = [`## ${n} (${SOCIAL_SITES[n]})${note}`];
     if (!results.length) lines.push('no results');
     for (const r of results) {
@@ -131,17 +158,6 @@ async function socialSearch(query, networks, limit) {
       lines.push(`- [${(r.title || r.url || '').trim()}](${r.url})${r.publishedDate ? ' · ' + String(r.publishedDate).slice(0, 10) : ''}${snippet ? '\n  ' + snippet.slice(0, 240) : ''}`);
     }
     sections.push(lines.join('\n'));
-    // one query at a time; the search backend paces upstream engines itself
-  }
-  if (total === 0) {
-    // Fallback: Social Searcher renders its results in the browser; the headless
-    // browser executes it. Best effort, reported as such.
-    try {
-      const r = await scrape(`https://www.social-searcher.com/social-buzz/?q5=${encodeURIComponent(q)}`);
-      sections.push(`## social-searcher.com (fallback)\n${r.markdown.slice(0, 4000)}`);
-    } catch (error) {
-      sections.push(`## social-searcher.com (fallback)\nunavailable: ${error.message}`);
-    }
   }
   return `# Social search: ${q}\n\n${sections.join('\n\n')}`;
 }
