@@ -79,8 +79,9 @@ print("patched engines/duckduckgo.py: region helper")
 patch(
     "engines/bing.py",
     '    engine_region = traits.get_region(params["searxng_locale"], traits.all_locale)\n',
-    '    engine_region = _region_for_locale(params["searxng_locale"])\n',
-    "bing region fallback",
+    '    engine_region = _region_for_locale(params["searxng_locale"])\n'
+    '    params["impersonate"] = "chrome"  # desktop layout; the mobile one has no parsable result list\n',
+    "bing region fallback, desktop profile",
 )
 bing = ROOT / "engines/bing.py"
 TOUCHED.add(bing)
