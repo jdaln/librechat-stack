@@ -12,14 +12,15 @@ use_default_settings:
       # general — what returns usable results from this deployment (2026-10-18);
       # DDG's request details are adjusted in patch_engines.py.
       - duckduckgo
-      - bing
       - wikipedia
+      # Reserve tier only (disabled below, so it is used when named explicitly
+      # with engines=bing, which the search patch does while the primary set is
+      # rate-limited). Its ranking is poor from here even with the right market.
+      - bing
       # Not included:
       #   startpage, mojeek — require a JavaScript-capable client now
       #   qwant             — the API endpoint used by the engine is unavailable
       #   brave, google     — do not serve automated clients from here
-      # bing gets its market from the query language (patch_engines.py); without
-      # that it follows the egress IP and returns cross-locale noise.
       # images
       - duckduckgo images
       - bing images
@@ -30,6 +31,10 @@ use_default_settings:
       - duckduckgo news
       - bing news
 
+
+engines:
+  - name: bing
+    disabled: true   # reserve tier only, see keep_only above
 
 general:
   instance_name: "LibreChat Local Search"
