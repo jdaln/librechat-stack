@@ -86,8 +86,7 @@ const SOCIAL_TOOL = {
     `Networks: ${Object.keys(SOCIAL_SITES).join(', ')} (default: ${SOCIAL_DEFAULT.join(', ')}). ` +
     'Returns links with titles and snippets per network (engine ranking decides how many each network gets); open a link with open_url to read the post or profile. ' +
     'Use this instead of web_search when the user asks what people say or post about something on social media. ' +
-    'One call covers all requested networks. A network marked "rate-limited" stays unavailable for several minutes: ' +
-    'do not rephrase and retry it in the same answer, report it as unavailable.',
+    'One call covers all requested networks. If a network comes back "rate-limited", retry at most once later in the answer; otherwise report it as unavailable.',
   inputSchema: {
     type: 'object',
     properties: {
@@ -103,8 +102,8 @@ const SOCIAL_TOOL = {
   },
 };
 
-async function searxng(query) {
-  const u = `${SEARXNG_URL}/search?q=${encodeURIComponent(query)}&format=json`;
+async function searxng(query, engines) {
+  const u = `${SEARXNG_URL}/search?q=${encodeURIComponent(query)}&format=json${engines ? '&engines=' + encodeURIComponent(engines) : ''}`;
   const response = await fetch(u, { headers: { 'X-API-Key': SEARXNG_API_KEY }, signal: AbortSignal.timeout(30000) });
   if (!response.ok) throw new Error(`search backend HTTP ${response.status}`);
   const data = await response.json().catch(() => ({}));
@@ -115,11 +114,6 @@ async function searxng(query) {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-// After an engine refusal, further searches for a while would only extend the
-// suspension; answer from that state instead. The server process is long-lived.
-let engineCooldownUntil = 0;
-let lastUnresponsive = [];
-const ENGINE_COOLDOWN_MS = 90000;
 
 function hostToNetwork(url, wanted) {
   let host = '';
@@ -145,7 +139,8 @@ async function socialSearch(query, networks, limit) {
   const seen = new Set();
   const unresponsive = new Set();
   const run = async (nets) => {
-    const r = await searxng(`${q} (${nets.map((n) => 'site:' + SOCIAL_SITES[n]).join(' OR ')})`);
+    // DDG only: the other engines index none of these sites for site: queries.
+    const r = await searxng(`${q} (${nets.map((n) => 'site:' + SOCIAL_SITES[n]).join(' OR ')})`, 'duckduckgo');
     r.unresponsive.forEach((e) => unresponsive.add(e));
     for (const res of r.results) {
       const n = hostToNetwork(res.url, wanted);
@@ -155,10 +150,7 @@ async function socialSearch(query, networks, limit) {
     }
   };
   let failure = '';
-  if (Date.now() < engineCooldownUntil) {
-    lastUnresponsive.forEach((e) => unresponsive.add(e));
-    failure = ` (engines rate-limited: ${lastUnresponsive.join(', ')}; not queried again for ${Math.ceil((engineCooldownUntil - Date.now()) / 1000)} s)`;
-  } else try {
+  try {
     await run(wanted);
     const missing = wanted.filter((n) => !grouped[n].length);
     if (missing.length && missing.length < wanted.length) {
@@ -168,16 +160,12 @@ async function socialSearch(query, networks, limit) {
   } catch (error) {
     failure = ` (search failed: ${error.message})`;
   }
-  if (unresponsive.size && !failure) {
-    engineCooldownUntil = Date.now() + ENGINE_COOLDOWN_MS;
-    lastUnresponsive = [...unresponsive];
-  }
 
   const sections = [];
   for (const n of wanted) {
     const results = grouped[n];
     let note = failure;
-    if (!results.length && !failure && unresponsive.size) note = ` (engines rate-limited: ${[...unresponsive].join(', ')}; retry in a few minutes)`;
+    if (!results.length && !failure && unresponsive.size) note = ` (engine rate-limited: ${[...unresponsive].join(', ')}; retry in a minute)`;
     const lines = [`## ${n} (${SOCIAL_SITES[n]})${note}`];
     if (!results.length) lines.push('no results');
     for (const r of results) {
