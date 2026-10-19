@@ -4,9 +4,12 @@ rootless legacy builder). Each step asserts its anchor, so an upstream change
 fails the build instead of silently doing nothing. Checked against searxng
 2026.10.17.
 """
+import importlib.util
 import pathlib
+import py_compile
 
 ROOT = pathlib.Path("/usr/local/searxng/searx")
+TOUCHED = set()
 
 
 def patch(rel, old, new, why):
@@ -14,7 +17,18 @@ def patch(rel, old, new, why):
     s = p.read_text()
     assert s.count(old) == 1, f"{rel}: anchor not found exactly once ({why})"
     p.write_text(s.replace(old, new))
+    TOUCHED.add(p)
     print(f"patched {rel}: {why}")
+
+
+def recompile():
+    """The image ships precompiled bytecode in unchecked-hash mode: the
+    interpreter never re-reads the source, so a patched .py alone changes
+    nothing. Rebuild the cache file of every touched module."""
+    for p in sorted(TOUCHED):
+        cfile = importlib.util.cache_from_source(str(p))
+        py_compile.compile(str(p), cfile=cfile, doraise=True, invalidation_mode=py_compile.PycInvalidationMode.CHECKED_HASH)
+        print(f"recompiled {p.relative_to(ROOT)} -> {pathlib.Path(cfile).name}")
 
 
 # Default curl_cffi client profile, consistent with data/useragents.json
@@ -37,6 +51,7 @@ patch(
     "ddg region fallback",
 )
 ddg = ROOT / "engines/duckduckgo.py"
+TOUCHED.add(ddg)
 ddg.write_text(
     ddg.read_text()
     + '''
@@ -68,6 +83,7 @@ patch(
     "bing region fallback",
 )
 bing = ROOT / "engines/bing.py"
+TOUCHED.add(bing)
 bing.write_text(
     bing.read_text()
     + '''
@@ -92,3 +108,4 @@ def _region_for_locale(locale: str) -> str:
 )
 print("patched engines/bing.py: region helper")
 
+recompile()

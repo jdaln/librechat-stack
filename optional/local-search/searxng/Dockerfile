@@ -22,7 +22,8 @@ COPY optional/local-search/searxng/limiter.toml /etc/searxng/limiter.toml
 # (see compose.local-search.rootless.yml).
 COPY optional/local-search/searxng/useragents.json /usr/local/searxng/searx/data/useragents.json
 COPY optional/local-search/searxng/patch_engines.py /tmp/patch_engines.py
-RUN ["python3", "/tmp/patch_engines.py"]
+# The image's own interpreter, so the recompiled bytecode matches its version.
+RUN ["/usr/local/searxng/.venv/bin/python", "/tmp/patch_engines.py"]
 # NOTE: the DDG header-order patch (searxng#6596 workaround) was removed
 # 2026-09-08: upstream merged the curl_cffi migration (searxng#6620) on
 # 2026-09-04, which gives engine requests browser-grade TLS/HTTP fingerprints
