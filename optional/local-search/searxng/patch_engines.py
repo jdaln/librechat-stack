@@ -58,3 +58,37 @@ def _region_for_locale(locale: str) -> str:
 )
 print("patched engines/duckduckgo.py: region helper")
 
+# Bing: same idea. Without a resolvable region it sends no market at all and
+# Bing picks one from the egress IP (German results for a French query from a
+# Swiss address). Derive the market from the detected language instead.
+patch(
+    "engines/bing.py",
+    '    engine_region = traits.get_region(params["searxng_locale"], traits.all_locale)\n',
+    '    engine_region = _region_for_locale(params["searxng_locale"])\n',
+    "bing region fallback",
+)
+bing = ROOT / "engines/bing.py"
+bing.write_text(
+    bing.read_text()
+    + '''
+
+def _region_for_locale(locale: str) -> str:
+    """Bing market ("<language>-<country>") for a locale; derived from the language when the locale has no region."""
+    region = traits.get_region(locale, None)
+    if region and region != "clear":
+        return region
+    lang = (locale or "").replace("_", "-").split("-")[0].lower()
+    if lang in ("", "all", "auto"):
+        return "en-us"
+    markets = set(traits.regions.values())
+    for candidate in (f"{lang}-{lang}", f"{lang}-us", f"{lang}-gb"):
+        if candidate in markets:
+            return candidate
+    for market in sorted(markets):
+        if market.startswith(lang + "-"):
+            return market
+    return "en-us"
+'''
+)
+print("patched engines/bing.py: region helper")
+

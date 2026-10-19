@@ -12,13 +12,14 @@ use_default_settings:
       # general — what returns usable results from this deployment (2026-10-18);
       # DDG's request details are adjusted in patch_engines.py.
       - duckduckgo
+      - bing
       - wikipedia
       # Not included:
       #   startpage, mojeek — require a JavaScript-capable client now
       #   qwant             — the API endpoint used by the engine is unavailable
       #   brave, google     — do not serve automated clients from here
-      #   bing              — without an explicit region it picks the market from
-      #                       the egress IP (German results for French queries)
+      # bing gets its market from the query language (patch_engines.py); without
+      # that it follows the egress IP and returns cross-locale noise.
       # images
       - duckduckgo images
       - bing images

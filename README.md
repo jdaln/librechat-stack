@@ -188,7 +188,7 @@ Search context is bounded by default (3 results, 2 scraped sources, 2 highlights
 Before enabling:
 
 - Set a strong `SEARXNG_API_KEY` in `.env` — internal search calls are authenticated with it.
-- Optional: set `BRAVE_API_KEY` to add the Brave Search API as the last-resort search tier. When the primary engines rate-limit (never on a genuine no-hit), searches escalate automatically: reserve engines first (`LIBRECHAT_SEARXNG_RESERVE_ENGINES`, default `wikipedia` — keep junk-prone engines like bing out, they substitute cross-locale noise for results; exponential-backoff circuit breaker via `LIBRECHAT_SEARXNG_BACKOFF_*`), then Brave if a key is set.
+- Optional: set `BRAVE_API_KEY` to add the Brave Search API as the last-resort search tier. When the primary engines rate-limit (never on a genuine no-hit), searches escalate automatically: reserve engines first (`LIBRECHAT_SEARXNG_RESERVE_ENGINES`, default `bing,wikipedia` — keep junk-prone engines like bing out, they substitute cross-locale noise for results; exponential-backoff circuit breaker via `LIBRECHAT_SEARXNG_BACKOFF_*`), then Brave if a key is set.
 
 When changing search config:
 

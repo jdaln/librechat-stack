@@ -319,7 +319,7 @@ LIBRECHAT_BRAVE_MIN_INTERVAL_MS=1100
 # success. Brave API stays the really-last resort (BRAVE_API_KEY above).
 LIBRECHAT_SEARXNG_BACKOFF_BASE_MS=10000
 LIBRECHAT_SEARXNG_BACKOFF_CAP_MS=240000
-LIBRECHAT_SEARXNG_RESERVE_ENGINES=wikipedia
+LIBRECHAT_SEARXNG_RESERVE_ENGINES=bing,wikipedia
 
 # The domain for the client and server. These are used for CORS and other
 # internal settings. For a local setup, the default is usually correct.
