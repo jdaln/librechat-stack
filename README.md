@@ -18,7 +18,7 @@ Licensed under [Apache 2.0](LICENSE).
 
 ```bash
 # 1. Create the Colima VM (once)
-colima start -p aiarm --vm-type=vz --cpu 4 --memory 8 --disk 50
+colima start -p aiarm --vm-type=vz --cpu 4 --memory 8 --disk 50 --mount none
 
 # 2. Copy and edit the env template
 cp template_dot_env .env
@@ -52,6 +52,19 @@ After the stack is up, create the first admin user (`-w /app` is required):
 docker compose -f docker-compose.yml -f compose.hardening.yml \
   exec -w /app api npm run create-user
 ```
+
+### No host directories in the VM
+
+Colima shares your home folder, writable, into the VM by default. The stack needs no host path: image builds upload their context, secrets are `docker cp`'d into a volume, and backups stream through the Docker API. `start_stack.sh` therefore starts the VM with `--mount none` and refuses to bring the stack up if the VM still shares host directories. Data lives in Docker volumes on the VM disk, so turning the share off keeps it.
+
+To switch an existing VM, restart it (do not `colima delete` it):
+
+```bash
+./scripts/stop_stack.sh     # stops the containers and the VM
+./scripts/start_stack.sh    # restarts the VM with --mount none
+```
+
+Set `COLIMA_MOUNT` to share something anyway (e.g. `COLIMA_MOUNT='~:w'` restores the Colima default).
 
 ### Optional: user-namespace remapping
 

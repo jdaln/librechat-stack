@@ -4,7 +4,8 @@
 # - Keep LibreChat UI/API + sandpack reachable from your Mac (127.0.0.1 only).
 # - Route API/RAG outbound traffic through a domain-allowlisted Squid egress proxy.
 # - Keep data services (mongodb, meilisearch, vectordb) on an INTERNAL network (no egress).
-# - Avoid host bind-mounts (use named volumes).
+# - Avoid host bind-mounts (use named volumes). The Colima VM shares no host
+#   directories, so a host-path mount would bind an empty VM-local directory.
 # - Load secrets/config from .env (no mounting .env).
 #
 # Usage (Colima aiarm profile example):

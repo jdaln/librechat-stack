@@ -159,18 +159,22 @@ wait_container_healthy() {
 
 restore_volume_tar() {
   local short="$1" archive="$2"
-  local vol archive_dir archive_name
+  local vol archive_name
 
   vol="$(resolve_volume "${short}")"
   [[ -n "${vol}" ]] || die "volume '${short}' not found (looked for '${PROJECT_NAME}_${short}' and '${short}')"
-  archive_dir="$(dirname "${archive}")"
   archive_name="$(basename "${archive}")"
 
+  # Checked on the host first: the volume is emptied before extraction.
+  tar -tzf "${archive}" >/dev/null || die "archive ${archive_name} is not a readable tar.gz"
+
+  # Fed on stdin rather than bind-mounting the archive directory: the Colima
+  # VM has no host directories shared into it.
   log "Restoring ${short} from ${archive_name}"
-  docker run --rm \
+  docker run --rm -i \
     -v "${vol}:/data" \
-    -v "${archive_dir}:/backup:ro" \
-    alpine:3 sh -lc "set -e; find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -xzf /backup/${archive_name} -C /data"
+    alpine:3 sh -c 'set -e; find /data -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +; tar -xzf - -C /data' \
+    < "${archive}"
 }
 
 restore_mongo_dump() {

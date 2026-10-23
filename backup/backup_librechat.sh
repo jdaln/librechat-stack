@@ -83,10 +83,15 @@ backup_volume_tar() {
   mkdir -p "$outdir"
   local outfile="$outdir/${short}-${DATE}.tar.gz"
   log "Backing up volume $short (actual: $vol) -> $outfile"
-  docker run --rm \
+  # Streamed to stdout rather than bind-mounting $outdir: the Colima VM has no
+  # host directories shared into it.
+  if ! docker run --rm \
     -v "${vol}:/data:ro" \
-    -v "${outdir}:/backup" \
-    alpine:3 sh -lc 'set -e; cd /data && tar -czf "/backup/'"$short"'-'"$DATE"'.tar.gz" .'
+    alpine:3 tar -czf - -C /data . > "$outfile"; then
+    log "ERROR: tar of volume $vol failed"
+    rm -f "$outfile"
+    return 1
+  fi
   verify_tar "$outfile"
 }
 

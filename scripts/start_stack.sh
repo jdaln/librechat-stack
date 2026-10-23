@@ -9,6 +9,11 @@ COLIMA_VM_TYPE="${COLIMA_VM_TYPE:-vz}"
 COLIMA_CPU="${COLIMA_CPU:-4}"
 COLIMA_MEMORY="${COLIMA_MEMORY:-8}"
 COLIMA_DISK="${COLIMA_DISK:-50}"
+# Host directories shared into the VM. Colima shares the whole home folder
+# writable by default; the stack needs no host path (builds upload their
+# context, secrets are docker-cp'd), so nothing is shared. Passed on every
+# start: an empty mount list in colima.yaml falls back to sharing ~.
+COLIMA_MOUNT="${COLIMA_MOUNT:-none}"
 DOCKER_CONTEXT_NAME="${DOCKER_CONTEXT_NAME:-colima-${COLIMA_PROFILE}}"
 ENABLE_STATIC_PREVIEW="${ENABLE_STATIC_PREVIEW:-0}"
 ENABLE_CODE_INTERPRETER="${ENABLE_CODE_INTERPRETER:-0}"
@@ -143,7 +148,8 @@ start_colima() {
       --vm-type="${COLIMA_VM_TYPE}" \
       --cpu "${COLIMA_CPU}" \
       --memory "${COLIMA_MEMORY}" \
-      --disk "${COLIMA_DISK}"
+      --disk "${COLIMA_DISK}" \
+      --mount "${COLIMA_MOUNT}"
     return
   fi
 
@@ -153,7 +159,21 @@ start_colima() {
   fi
 
   log "Starting existing Colima profile '${COLIMA_PROFILE}'"
-  colima start -p "${COLIMA_PROFILE}"
+  colima start -p "${COLIMA_PROFILE}" --mount "${COLIMA_MOUNT}"
+}
+
+assert_no_host_mounts() {
+  if [[ "${COLIMA_MOUNT}" != "none" ]]; then
+    return
+  fi
+
+  # Any host-share filesystem except the Rosetta runtime share (vz only).
+  if ! colima ssh -p "${COLIMA_PROFILE}" -- \
+    awk '$3 ~ /^(virtiofs|fuse\.sshfs|9p)$/ && $2 !~ /rosetta/ { print "  " $2; found = 1 } END { exit found }' /proc/mounts >&2; then
+    echo "ERROR: the Colima VM '${COLIMA_PROFILE}' shares host directories (listed above) or could not be checked." >&2
+    echo "Restart it without mounts (volumes are kept): colima stop -p ${COLIMA_PROFILE} && ${0}" >&2
+    exit 1
+  fi
 }
 
 wait_for_docker() {
@@ -275,6 +295,7 @@ main() {
 
   log "Waiting for Docker daemon"
   wait_for_docker
+  assert_no_host_mounts
 
   prepare_code_interpreter
   prepare_local_search

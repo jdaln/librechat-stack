@@ -19,7 +19,7 @@ Backup layout:
 - `~/Backups/LibreChatBackups/volumes/<volume>/<volume>-YYYY-MM-DD_HH-MM-SS.tar.gz`
 - `.../mongo_data/mongo_data-<stamp>.mongodump.archive.gz` (live Mongo dump)
 - `.../pgdata2/pgdata2-<stamp>.pgdumpall.sql.gz` (live Postgres dump)
-- If you use Colima, keep `BACKUP_ROOT` under your home directory (`/Users/...`) so Docker bind-mounts are visible.
+- Archives are streamed through the Docker API (stdout/stdin), with no bind mounts, so `BACKUP_ROOT` can be any host directory, even though the Colima VM shares none.
 
 > **Also back up `.env` and `secrets/` (encrypted, outside this tooling).**
 > Restored volumes are useless without the matching Mongo/Meili/JWT secrets:
